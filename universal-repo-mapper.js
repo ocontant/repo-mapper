@@ -4,6 +4,14 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 const commander = require('commander');
+// Import tree-sitter correctly
+let Parser;
+try {
+  Parser = require('tree-sitter');
+} catch (error) {
+  console.error('Error importing tree-sitter:', error.message);
+  console.error('Please install tree-sitter with npm: npm install tree-sitter');
+}
 
 // Setup commander
 const program = new commander.Command();
@@ -173,9 +181,16 @@ async function detectLanguage() {
   debug('Auto-detecting repository language...');
   
   // Get file extensions in the repository
+  // Convert glob-like patterns in exclude list to basic grep patterns
+  const excludePattern = options.exclude
+    .replace(/,/g, '\\|')
+    .replace(/\*\*\//g, '')  // Remove **/ prefix
+    .replace(/\/\*\*/g, '')  // Remove /** suffix
+    .replace(/\*/g, '.*');   // Convert * to .* for grep
+
   const findCmd = process.platform === 'win32'
     ? `dir /s /b ${baseDir} | findstr /i "\\."`
-    : `find ${baseDir} -type f | grep -v "${options.exclude.replace(/,/g, '\\|')}" | grep "\\."`; 
+    : `find ${baseDir} -type f -name "*.*" | grep -v "${excludePattern}"`;  
 
   try {
     const files = execSync(findCmd, { encoding: 'utf8' }).split('\n');
@@ -223,11 +238,22 @@ function findFiles(language) {
     .map(ext => ext.replace('.', ''))
     .join('\\|');
   
-  const excludePattern = options.exclude.replace(/,/g, '\\|');
+  // Convert glob-like patterns in exclude list to basic grep patterns
+  const excludePattern = options.exclude
+    .replace(/,/g, '\\|')
+    .replace(/\*\*\//g, '')  // Remove **/ prefix
+    .replace(/\/\*\*/g, '')  // Remove /** suffix
+    .replace(/\*/g, '.*');   // Convert * to .* for grep
   
-  const findCmd = process.platform === 'win32'
-    ? `dir /s /b ${baseDir} | findstr /i "\\.${extensionPattern}$" | findstr /v "${excludePattern}"`
-    : `find ${baseDir} -type f -name "*.[${extensionPattern}]" | grep -v "${excludePattern}"`;
+  // Create a dynamic find command based on the extensions
+  let findCmd;
+  if (process.platform === 'win32') {
+    findCmd = `dir /s /b ${baseDir} | findstr /i "\\.${extensionPattern}$" | findstr /v "${excludePattern}"`;
+  } else {
+    // For Unix-like systems, use multiple -name patterns with -o (OR) operator
+    const extensionPatterns = extensions.map(ext => `-name "*${ext}"`).join(' -o ');
+    findCmd = `find ${baseDir} -type f \\( ${extensionPatterns} \\) | grep -v "${excludePattern}"`;
+  }
 
   debug(`Running find command: ${findCmd}`);
   
@@ -1176,88 +1202,294 @@ function generateServiceDiagram(filesInfo, graph) {
 }
 
 // Generate module dependencies diagram
-function generateModuleDiagram(features, language) {
+function generateModuleDiagram(filesInfo, language) {
   let diagram = '```mermaid\ngraph TD\n';
   
-  // Different module structures based on language/framework
-  if (['typescript', 'javascript'].includes(language)) {
-    // Angular-like module structure
-    diagram += '  Core["Core Module"]\n';
-    diagram += '  SharedModels["Shared Models"]\n';
-    diagram += '  Features["Features Module"]\n';
-    diagram += '  App["App Module"]\n';
-    diagram += '  Shared["Shared Module"]\n';
+  // Step 1: Analyze actual directory structure to identify modules
+  const directoryModules = {};
+  const moduleConnections = {};
+  
+  // Common patterns to exclude from module consideration
+  const excludePatterns = [
+    'node_modules', '.git', 'dist', 'build', '.idea', '.vscode', 
+    'coverage', 'tmp', 'temp', 'logs', 'target', 'bin', 'obj'
+  ];
+  
+  // Map files to directories and count them to identify significant modules
+  filesInfo.forEach(fileInfo => {
+    const filePath = fileInfo.path;
+    const dirPath = path.dirname(filePath);
+    const dirParts = dirPath.split(path.sep);
     
-    // Add standard dependencies
-    diagram += '  Core --> SharedModels\n';
-    diagram += '  Features --> Core\n';
-    diagram += '  Features --> SharedModels\n';
-    diagram += '  App --> Core\n';
-    diagram += '  App --> Features\n';
-    diagram += '  App --> Shared\n';
+    // Start from the root of the project
+    const rootIdx = dirParts.indexOf(path.basename(baseDir));
+    if (rootIdx === -1) return;
     
-    // Add styling
-    diagram += '  style Core fill:#7030a0,stroke:#333,stroke-width:2px,color:white\n';
-    diagram += '  style SharedModels fill:#7030a0,stroke:#333,stroke-width:2px,color:white\n';
-    diagram += '  style Features fill:#7030a0,stroke:#333,stroke-width:2px,color:white\n';
-    diagram += '  style App fill:#7030a0,stroke:#333,stroke-width:2px,color:white\n';
-    diagram += '  style Shared fill:#7030a0,stroke:#333,stroke-width:2px,color:white\n';
-  }
-  else if (['python', 'ruby', 'php', 'java'].includes(language)) {
-    // MVC-like architecture
-    diagram += '  Models["Models/Entities"]\n';
-    diagram += '  Controllers["Controllers"]\n';
-    diagram += '  Services["Services"]\n';
-    diagram += '  Repositories["Repositories"]\n';
-    diagram += '  Utils["Utilities"]\n';
-    
-    // Add standard dependencies
-    diagram += '  Controllers --> Services\n';
-    diagram += '  Services --> Repositories\n';
-    diagram += '  Repositories --> Models\n';
-    diagram += '  Services --> Models\n';
-    diagram += '  Controllers --> Utils\n';
-    diagram += '  Services --> Utils\n';
-    
-    // Add styling
-    diagram += '  style Models fill:#5b9bd5,stroke:#333,stroke-width:2px,color:white\n';
-    diagram += '  style Controllers fill:#70ad47,stroke:#333,stroke-width:2px,color:white\n';
-    diagram += '  style Services fill:#ed7d31,stroke:#333,stroke-width:2px,color:white\n';
-    diagram += '  style Repositories fill:#ffc000,stroke:#333,stroke-width:2px,color:white\n';
-    diagram += '  style Utils fill:#7030a0,stroke:#333,stroke-width:2px,color:white\n';
-  }
-  else {
-    // Generic module structure
-    const featureNames = Object.keys(features);
-    
-    // Add all features as nodes
-    featureNames.forEach(feature => {
-      diagram += `  ${feature.replace('/', '_')}["${feature}"]\n`;
-    });
-    
-    // Add some sample dependencies between features
-    if (featureNames.includes('core')) {
-      featureNames.forEach(feature => {
-        if (feature !== 'core') {
-          diagram += `  ${feature.replace('/', '_')} --> ${'core'.replace('/', '_')}\n`;
-        }
-      });
+    // Build up parent directory paths and count files at each level
+    let parentPath = '';
+    for (let i = rootIdx; i < dirParts.length; i++) {
+      const currentPart = dirParts[i];
+      const fullPath = parentPath ? parentPath + path.sep + currentPart : currentPart;
+      
+      // Skip directories in exclude patterns
+      if (excludePatterns.includes(currentPart)) {
+        break;
+      }
+      
+      if (!directoryModules[fullPath]) {
+        directoryModules[fullPath] = {
+          name: currentPart,
+          count: 0,
+          path: fullPath,
+          imports: [],
+          level: i - rootIdx,
+          fileTypes: new Set() // Track the types of files in this module
+        };
+      }
+      
+      // Track file types based on extensions and naming patterns
+      const ext = path.extname(filePath).toLowerCase();
+      const baseName = path.basename(filePath, ext).toLowerCase();
+      directoryModules[fullPath].count++;
+      directoryModules[fullPath].fileTypes.add(ext);
+      
+      // Detect file purpose based on naming conventions
+      if (baseName.includes('test') || baseName.includes('spec')) {
+        directoryModules[fullPath].hasTests = true;
+      }
+      if (baseName.includes('component') || baseName.includes('view')) {
+        directoryModules[fullPath].hasComponents = true;
+      }
+      if (baseName.includes('service') || baseName.includes('provider')) {
+        directoryModules[fullPath].hasServices = true;
+      }
+      if (baseName.includes('model') || baseName.includes('entity') || baseName.includes('schema')) {
+        directoryModules[fullPath].hasModels = true;
+      }
+      if (baseName.includes('controller') || baseName.includes('handler') || baseName.includes('route')) {
+        directoryModules[fullPath].hasControllers = true;
+      }
+      if (baseName.includes('util') || baseName.includes('helper') || baseName.includes('common')) {
+        directoryModules[fullPath].hasUtils = true;
+      }
+      
+      parentPath = fullPath;
     }
     
-    if (featureNames.includes('shared') || featureNames.includes('common')) {
-      const sharedFeature = featureNames.includes('shared') ? 'shared' : 'common';
-      featureNames.forEach(feature => {
-        if (feature !== sharedFeature && feature !== 'core') {
-          diagram += `  ${feature.replace('/', '_')} --> ${sharedFeature.replace('/', '_')}\n`;
-        }
-      });
+    // Add imports to the directory module for connection analysis
+    if (fileInfo.imports && fileInfo.imports.length > 0) {
+      const fileDir = path.dirname(filePath);
+      if (directoryModules[fileDir]) {
+        directoryModules[fileDir].imports = 
+          directoryModules[fileDir].imports.concat(fileInfo.imports);
+      }
+    }
+  });
+  
+  // Step 2: Identify "significant" modules with a more flexible approach
+  
+  // First, automatically determine a good threshold for file count
+  const fileCounts = Object.values(directoryModules).map(m => m.count);
+  // Use a more dynamic threshold - default to 2 but adjust based on project
+  let minFileCount = 2;
+  
+  // If we have enough data, use statistical approach
+  if (fileCounts.length > 10) {
+    // Calculate average files per directory
+    const average = fileCounts.reduce((a, b) => a + b, 0) / fileCounts.length;
+    // Use a percentage of the average as threshold, but min of 2
+    minFileCount = Math.max(2, Math.ceil(average * 0.5));
+  }
+  
+  // Common directory names that are likely to be important modules regardless of file count
+  const importantDirNames = [
+    'src', 'lib', 'core', 'api', 'app', 'components', 'services', 
+    'models', 'controllers', 'utils', 'helpers', 'common', 'shared', 
+    'config', 'modules', 'features', 'pages', 'views', 'ui', 'interfaces',
+    'public', 'assets', 'static', 'docs', 'scripts', 'tools', 'database',
+    'migrations', 'routes', 'middleware', 'hooks', 'state', 'store'
+  ];
+  
+  // Filter significant modules with more flexible criteria
+  const significantModules = Object.values(directoryModules).filter(module => {
+    const name = module.name.toLowerCase();
+    
+    // Include module if it has enough files
+    if (module.count >= minFileCount) return true;
+    
+    // Include modules with important names even with fewer files
+    if (importantDirNames.includes(name)) return true;
+    
+    // Include modules that contain specific types of code files
+    if (module.hasComponents || module.hasServices || module.hasModels || 
+        module.hasControllers || module.hasUtils) {
+      return true;
     }
     
-    // Add styling for features
-    featureNames.forEach(feature => {
-      diagram += `  style ${feature.replace('/', '_')} fill:#7030a0,stroke:#333,stroke-width:2px,color:white\n`;
+    // Check if this module has uniquely typed files compared to parent
+    if (module.level > 0 && module.fileTypes.size > 1) {
+      return true;
+    }
+    
+    return false;
+  });
+  
+  // Sort modules by level (depth in directory hierarchy) for better visualization
+  significantModules.sort((a, b) => a.level - b.level);
+  
+  // Step 3: Analyze connections between modules based on imports
+  significantModules.forEach(module => {
+    const moduleImports = module.imports;
+    const modulePath = module.path;
+    
+    // For each import, find which module it belongs to
+    moduleImports.forEach(importPath => {
+      // Skip external dependencies
+      if (!importPath.startsWith('@') && !importPath.startsWith('.')) {
+        return;
+      }
+      
+      // Normalize the import path to check which module it belongs to
+      let normalizedImport = importPath;
+      
+      if (importPath.startsWith('.')) {
+        // Convert relative import to absolute path
+        const baseDirPath = path.dirname(modulePath);
+        try {
+          normalizedImport = path.normalize(path.join(baseDirPath, importPath));
+        } catch (e) {
+          // Skip invalid paths
+          return;
+        }
+      }
+      
+      // Find the module this import belongs to
+      const targetModule = significantModules.find(mod => 
+        normalizedImport.includes(mod.path) && mod.path !== modulePath
+      );
+      
+      if (targetModule) {
+        if (!moduleConnections[modulePath]) {
+          moduleConnections[modulePath] = new Set();
+        }
+        moduleConnections[modulePath].add(targetModule.path);
+      }
     });
-  }
+  });
+  
+  // Step 4: Create the diagram with significant modules and their connections
+  
+  // Create valid node IDs for Mermaid
+  const nodeIds = {};
+  significantModules.forEach(module => {
+    // Create a safe ID for mermaid diagram
+    const safeId = module.name.replace(/[^a-zA-Z0-9]/g, '_').replace(/^[0-9]/, 'n$&');
+    nodeIds[module.path] = safeId;
+    
+    // Add node to diagram with proper label
+    diagram += `  ${safeId}["${module.name}"]\n`;
+  });
+  
+  // Add connections between modules
+  Object.entries(moduleConnections).forEach(([source, targets]) => {
+    const sourceId = nodeIds[source];
+    if (!sourceId) return;
+    
+    targets.forEach(target => {
+      const targetId = nodeIds[target];
+      if (targetId && sourceId !== targetId) {
+        diagram += `  ${sourceId} --> ${targetId}\n`;
+      }
+    });
+  });
+  
+  // Step 5: Add styling with more flexible module type detection
+  
+  diagram += '\n';
+  significantModules.forEach(module => {
+    const moduleId = nodeIds[module.path];
+    if (!moduleId) return;
+    
+    const name = module.name.toLowerCase();
+    
+    // Default color
+    let fillColor = '#7030a0'; // Default purple
+    
+    // Determine module type and color based on name and content
+    // We'll use a more sophisticated approach to detect module types
+    
+    // Determine module's primary role based on file content and naming
+    let primaryRole = 'other';
+    
+    // Define possible module roles and their identifying characteristics
+    const roles = {
+      core: {
+        keywords: ['core', 'src', 'main', 'app', 'base', 'root', 'foundation'],
+        color: '#70ad47' // Green
+      },
+      data: {
+        keywords: ['models', 'entities', 'data', 'schemas', 'types', 'dto', 'database', 'store', 'domain'],
+        hasModels: true,
+        color: '#5b9bd5' // Blue
+      },
+      ui: {
+        keywords: ['components', 'ui', 'views', 'pages', 'templates', 'layouts', 'screens', 'dashboard'],
+        hasComponents: true,
+        color: '#ed7d31' // Orange
+      },
+      services: {
+        keywords: ['services', 'api', 'http', 'client', 'providers', 'managers', 'facade'],
+        hasServices: true,
+        color: '#ffc000' // Gold
+      },
+      controllers: {
+        keywords: ['controllers', 'handlers', 'routes', 'endpoints', 'actions', 'middleware'],
+        hasControllers: true,
+        color: '#4472c4' // Darker blue
+      },
+      utils: {
+        keywords: ['utils', 'helpers', 'common', 'shared', 'lib', 'tools', 'util'],
+        hasUtils: true,
+        color: '#7030a0' // Purple
+      },
+      config: {
+        keywords: ['config', 'settings', 'constants', 'environment', 'env'],
+        color: '#c55a11' // Brown
+      },
+      testing: {
+        keywords: ['tests', 'specs', 'e2e', 'testing', 'mocks', 'fixtures'],
+        hasTests: true,
+        color: '#8497b0' // Gray-blue
+      },
+      assets: {
+        keywords: ['assets', 'static', 'public', 'resources', 'images', 'media', 'css', 'styles'],
+        color: '#a5a5a5' // Gray
+      }
+    };
+    
+    // Check for role matches based on module name and properties
+    for (const [role, criteria] of Object.entries(roles)) {
+      const nameMatch = criteria.keywords.some(keyword => 
+        name === keyword || name.includes(keyword)
+      );
+      
+      const contentMatch = criteria.hasComponents && module.hasComponents ||
+                          criteria.hasServices && module.hasServices ||
+                          criteria.hasModels && module.hasModels ||
+                          criteria.hasControllers && module.hasControllers ||
+                          criteria.hasUtils && module.hasUtils ||
+                          criteria.hasTests && module.hasTests;
+      
+      if (nameMatch || contentMatch) {
+        primaryRole = role;
+        fillColor = criteria.color;
+        break;
+      }
+    }
+    
+    // Add styling to node
+    diagram += `  style ${moduleId} fill:${fillColor},stroke:#333,stroke-width:2px,color:white\n`;
+  });
   
   diagram += '```\n';
   
@@ -1532,8 +1764,23 @@ async function main() {
     
     // Load appropriate language parser
     const languageParser = await loadLanguageParser(detectedLanguage);
-    const parser = new Parser();
-    parser.setLanguage(languageParser);
+    
+    // Create parser instance
+    let parser;
+    try {
+      if (typeof Parser === 'function') {
+        parser = new Parser();
+      } else if (Parser && typeof Parser.Parser === 'function') {
+        parser = new Parser.Parser();
+      } else {
+        throw new Error('Could not initialize Parser - tree-sitter may not be installed correctly');
+      }
+      parser.setLanguage(languageParser);
+    } catch (error) {
+      console.error('Error initializing parser:', error.message);
+      console.error('This may be due to missing dependencies. Try running with --install-deps flag');
+      process.exit(1);
+    }
     
     console.log(`Finding ${detectedLanguage} files...`);
     const files = findFiles(detectedLanguage);
