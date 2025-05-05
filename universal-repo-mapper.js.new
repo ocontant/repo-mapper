@@ -1,0 +1,183 @@
+// New implementation of generateModuleDiagram that is more adaptable to different project structures
+function generateModuleDiagram(filesInfo, language) {
+  let diagram = '```mermaid\ngraph TD\n';
+  
+  // Step 1: Analyze actual directory structure to identify modules
+  const directoryModules = {};
+  const moduleConnections = {};
+  
+  // Map files to directories and count them to identify significant modules
+  filesInfo.forEach(fileInfo => {
+    const filePath = fileInfo.path;
+    const dirPath = path.dirname(filePath);
+    const dirParts = dirPath.split(path.sep);
+    
+    // Start from the root of the project
+    const rootIdx = dirParts.indexOf(path.basename(baseDir));
+    if (rootIdx === -1) return;
+    
+    // Build up parent directory paths and count files at each level
+    let parentPath = '';
+    for (let i = rootIdx; i < dirParts.length; i++) {
+      const currentPart = dirParts[i];
+      const fullPath = parentPath ? parentPath + path.sep + currentPart : currentPart;
+      
+      // Skip common patterns that don't represent logical modules
+      if (currentPart === 'node_modules' || currentPart === '.git' || 
+          currentPart === 'dist' || currentPart === 'build') {
+        break;
+      }
+      
+      if (!directoryModules[fullPath]) {
+        directoryModules[fullPath] = {
+          name: currentPart,
+          count: 0,
+          path: fullPath,
+          imports: [],
+          level: i - rootIdx
+        };
+      }
+      
+      directoryModules[fullPath].count++;
+      parentPath = fullPath;
+    }
+    
+    // Add imports to the directory module for connection analysis
+    if (fileInfo.imports && fileInfo.imports.length > 0) {
+      const fileDir = path.dirname(filePath);
+      if (directoryModules[fileDir]) {
+        directoryModules[fileDir].imports = 
+          directoryModules[fileDir].imports.concat(fileInfo.imports);
+      }
+    }
+  });
+  
+  // Filter only significant modules (with enough files or special meaning)
+  const minFileCount = 2; // Minimum number of files to be considered a significant module
+  const significantModules = Object.values(directoryModules).filter(module => {
+    const name = module.name.toLowerCase();
+    
+    // Include module if it has enough files
+    if (module.count >= minFileCount) return true;
+    
+    // Include special directories that might have meaning even with few files
+    if (name === 'src' || name === 'lib' || name === 'core' || 
+        name === 'components' || name === 'services' || name === 'utils' ||
+        name === 'models' || name === 'controllers' || name === 'api' ||
+        name === 'shared' || name === 'common' || name === 'app') {
+      return true;
+    }
+    
+    return false;
+  });
+  
+  // Sort modules by level (depth in directory hierarchy)
+  significantModules.sort((a, b) => a.level - b.level);
+  
+  // Step 2: Analyze connections between modules based on imports
+  significantModules.forEach(module => {
+    const moduleImports = module.imports;
+    const modulePath = module.path;
+    
+    // For each import, find which module it belongs to
+    moduleImports.forEach(importPath => {
+      // Skip external dependencies
+      if (!importPath.startsWith('@') && !importPath.startsWith('.')) {
+        return;
+      }
+      
+      // Normalize the import path to check which module it belongs to
+      let normalizedImport = importPath;
+      
+      if (importPath.startsWith('.')) {
+        // Convert relative import to absolute path
+        const baseDirPath = path.dirname(modulePath);
+        try {
+          normalizedImport = path.normalize(path.join(baseDirPath, importPath));
+        } catch (e) {
+          // Skip invalid paths
+          return;
+        }
+      }
+      
+      // Find the module this import belongs to
+      const targetModule = significantModules.find(mod => 
+        normalizedImport.includes(mod.path) && mod.path !== modulePath
+      );
+      
+      if (targetModule) {
+        if (!moduleConnections[modulePath]) {
+          moduleConnections[modulePath] = new Set();
+        }
+        moduleConnections[modulePath].add(targetModule.path);
+      }
+    });
+  });
+  
+  // Step 3: Create the diagram with significant modules and their connections
+  
+  // Create valid node IDs for Mermaid
+  const nodeIds = {};
+  significantModules.forEach(module => {
+    // Create a safe ID for mermaid diagram
+    const safeId = module.name.replace(/[^a-zA-Z0-9]/g, '_').replace(/^[0-9]/, 'n$&');
+    nodeIds[module.path] = safeId;
+    
+    // Add node to diagram with proper label
+    diagram += `  ${safeId}["${module.name}"]\n`;
+  });
+  
+  // Add connections between modules
+  Object.entries(moduleConnections).forEach(([source, targets]) => {
+    const sourceId = nodeIds[source];
+    if (!sourceId) return;
+    
+    targets.forEach(target => {
+      const targetId = nodeIds[target];
+      if (targetId && sourceId !== targetId) {
+        diagram += `  ${sourceId} --> ${targetId}\n`;
+      }
+    });
+  });
+  
+  // Add styling based on module types
+  diagram += '\n';
+  significantModules.forEach(module => {
+    const moduleId = nodeIds[module.path];
+    const name = module.name.toLowerCase();
+    
+    // Determine color based on module type
+    let fillColor = '#7030a0'; // Default purple
+    
+    // Core modules (green)
+    if (name === 'core' || name === 'src' || name === 'app') {
+      fillColor = '#70ad47';
+    }
+    // Data/model modules (blue)
+    else if (name === 'models' || name === 'entities' || name === 'data' || 
+             name === 'stores' || name === 'database') {
+      fillColor = '#5b9bd5';
+    }
+    // UI/components modules (orange)
+    else if (name === 'components' || name === 'ui' || name === 'views' || 
+             name === 'pages' || name.includes('component')) {
+      fillColor = '#ed7d31';
+    }
+    // Service/api modules (gold)
+    else if (name === 'services' || name === 'api' || name === 'http' || 
+             name.includes('service') || name.includes('client')) {
+      fillColor = '#ffc000';
+    }
+    // Utility modules (purple)
+    else if (name === 'utils' || name === 'helpers' || name === 'common' || 
+             name === 'shared' || name === 'lib') {
+      fillColor = '#7030a0';
+    }
+    
+    diagram += `  style ${moduleId} fill:${fillColor},stroke:#333,stroke-width:2px,color:white\n`;
+  });
+  
+  diagram += '```\n';
+  
+  return diagram;
+}
