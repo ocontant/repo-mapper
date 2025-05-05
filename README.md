@@ -1,127 +1,65 @@
-# Universal Repository Mapper
+# Repository Mapper Updates
 
-A powerful code visualization tool that generates comprehensive repository maps for any codebase in multiple programming languages.
+This directory contains updates to the original `universal-repo-mapper.js` script to make the documentation more universal and adaptable to different project types, without assuming specific frameworks like Angular or standard features like login pages and dashboards.
 
-## Overview
+## Changes Made
 
-Universal Repository Mapper uses tree-sitter to analyze your codebase and generate a detailed Markdown document with visualizations of your project's architecture, including:
+The following improvements have been implemented:
 
-- Component trees
-- Service architecture
-- Module dependencies
-- Routing structure
-- Public API interfaces
-- Model definitions
-- Code organization by feature
+1. **More Generic Routing Diagram** (in `updated-routing-diagram.js`)
+   - Removed assumptions about login pages and dashboards
+   - Dynamically detects routes based on codebase structure
+   - Identifies API endpoints more intelligently
+   - Adapts to the actual project structure
 
-The tool supports multiple programming languages including:
-- JavaScript/TypeScript
-- Python
-- Ruby
-- Go
-- Rust
-- C/C++
-- Java
-- PHP
-- Swift
-- HTML/CSS
-- Vue
+2. **Improved Module Diagram** (in `updated-module-diagram.js`)
+   - Removed Angular/MVC-specific architecture assumptions
+   - Creates a diagram based on discovered modules/directories
+   - Categorizes modules based on naming patterns (UI, data, core, etc.)
+   - Shows more realistic connections between modules
 
-## Installation
+3. **Generic File Type Classifications** (in `updated-file-classifications.js`)
+   - More comprehensive file type detection
+   - Framework-agnostic classifications (component, service, model, etc.)
+   - Detects file types based on naming patterns and directory structure
+   - Added new classifications (stylesheets, resources, scripts, etc.)
 
-### Global Installation (recommended)
+4. **Universal Architecture Overview** (in `updated-architecture-overview.js`)
+   - Dynamically determines the architecture type from the codebase structure
+   - Identifies common architecture patterns (component-based, API/backend, etc.)
+   - Describes modules and features based on actual project structure
+   - Adapts descriptions to what's actually found in the code
 
-```bash
-npm install -g universal-repo-mapper
-```
+## Implementation Instructions
 
-### Local Installation
+To implement these changes, you have two options:
 
-```bash
-npm install universal-repo-mapper
-```
+### Option 1: Replace specific functions in the original script
 
-## Dependencies
+Replace the following functions in `universal-repo-mapper.js` with their updated versions:
 
-First, install the required dependencies:
+1. Replace `processFile` with the version from `updated-file-classifications.js`
+2. Replace `generateRoutingDiagram` with the version from `updated-routing-diagram.js`
+3. Replace `generateModuleDiagram` with the version from `updated-module-diagram.js`
+4. Add the new `generateArchitectureOverview` function from `updated-architecture-overview.js`
+5. Update the `main` function to call `generateArchitectureOverview` instead of the hardcoded architecture section
 
-```bash
-# Install core dependencies
-repomap --install-deps
+### Option 2: Create a unified script
 
-# Install parsers for specific languages
-repomap --install-deps --install-langs python,ruby,go
+Copy the entire `universal-repo-mapper.js` and replace the necessary functions with the updated versions from the files mentioned above.
 
-# Install parsers for all supported languages
-repomap --install-deps --install-all-langs
-```
+## Benefits of These Changes
 
-## Usage
+- **More Accurate Documentation**: The generated documentation will better reflect the actual project structure
+- **Universal Applicability**: Works well with any framework or project type
+- **Adaptable Results**: Diagrams and descriptions adapt to what's actually in the codebase
+- **No Assumptions**: Doesn't assume specific frameworks or standard features
 
-```bash
-# Basic usage (analyzes current directory)
-repomap
+## Testing
 
-# Specify target directory
-repomap --directory /path/to/your/project
+After implementing these changes:
 
-# Specify output file
-repomap --output repo-documentation.md
-
-# Force a specific language analysis
-repomap --language typescript
-
-# Exclude specific file patterns
-repomap --exclude "node_modules,dist,build,.git,**/test/**"
-
-# Include specific file patterns
-repomap --include "src/**/*"
-
-# Limit the number of files to process
-repomap --max-files 500
-```
-
-## Command Options
-
-```
-Options:
-  -d, --directory <dir>     Target directory to analyze (default: current directory)
-  -o, --output <file>       Output file path (default: "repomap.gen.md")
-  -l, --language <lang>     Force specific language (auto-detected if not specified)
-  -e, --exclude <pattern>   File patterns to exclude (comma-separated)
-  -m, --max-files <number>  Maximum number of files to process (default: 1000)
-  -i, --include <pattern>   File patterns to include (comma-separated)
-  -s, --no-services         Skip services diagram generation
-  -c, --no-components       Skip component diagram generation
-  -r, --no-routes           Skip routes diagram generation
-  --debug                   Enable debug logging
-  --install-deps            Install required dependencies
-  --install-all-langs       Install parsers for all supported languages
-  --install-langs <langs>   Install specific language parsers
-  -h, --help                Display help for command
-  -V, --version             Output the version number
-```
-
-## Example Output
-
-The generated repository map includes:
-
-- Architecture overview
-- Component tree diagrams
-- Service architecture diagrams
-- Module dependency diagrams
-- Routing structure
-- Public API interfaces
-- Model definitions
-- Code organization by feature
-
-All visualizations are generated in Mermaid.js format for rendering in markdown viewers that support it.
-
-## Requirements
-
-- Node.js >=12.0.0
-- For full functionality, install the tree-sitter parsers for your target languages
-
-## License
-
-MIT
+1. Run the script on different types of projects
+2. Verify that the generated documentation accurately represents each project
+3. Check that diagrams are meaningful and reflect the actual code structure
+4. Ensure no framework-specific assumptions appear in the output
