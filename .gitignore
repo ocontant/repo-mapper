@@ -6,6 +6,7 @@ Claude.md
 claude.md
 */claude.md
 */Claude.md
+
 ### Node ###
 # Logs
 logs
@@ -50,6 +51,7 @@ build/Release
 # Dependency directories
 node_modules/
 jspm_packages/
+
 
 # Snowpack dependency directory (https://snowpack.dev/)
 web_modules/

@@ -1,29 +1,44 @@
 {
-  "name": "universal-repo-mapper",
+  "name": "repomapper",
   "version": "1.0.0",
   "description": "Universal repository mapper tool using tree-sitter for any programming language",
-  "main": "universal-repo-mapper.js",
+  "main": "repomap.js",
   "scripts": {
-    "start": "node universal-repo-mapper.js",
-    "install-deps": "node universal-repo-mapper.js --install-deps",
-    "install-all-langs": "node universal-repo-mapper.js --install-deps --install-all-langs"
+    "start": "node repomap.js",
+    "install-deps": "node repomap.js --install-deps",
+    "install-all-langs": "node repomap.js --install-deps --install-all-langs"
   },
   "bin": {
-    "repomap": "./universal-repo-mapper.js",
-    "repo-mapper": "./universal-repo-mapper.js",
-    "universal-repo-mapper": "./universal-repo-mapper.js"
+    "repomapper": "./repomap.js"
   },
   "dependencies": {
-    "commander": "^9.5.0",
-    "tree-sitter": "^0.20.6"
+    "commander": "^13.1.0",
+    "tree-sitter": "^0.22.4",
+    "tree-sitter-kotlin": "^0.3.8"
   },
   "optionalDependencies": {
-    "tree-sitter-javascript": "^0.19.0",
-    "tree-sitter-typescript": "^0.20.5"
+    "tree-sitter-c": "^0.20.8",
+    "tree-sitter-c-sharp": "^0.20.0",
+    "tree-sitter-cpp": "^0.20.5",
+    "tree-sitter-css": "^0.20.0",
+    "tree-sitter-go": "^0.23.4",
+    "tree-sitter-html": "^0.20.4",
+    "tree-sitter-java": "^0.23.5",
+    "tree-sitter-javascript": "^0.23.1",
+    "tree-sitter-php": "^0.20.0",
+    "tree-sitter-python": "^0.23.6",
+    "tree-sitter-ruby": "^0.20.1",
+    "tree-sitter-rust": "^0.20.4",
+    "tree-sitter-typescript": "^0.23.2",
+    "tree-sitter-vue": "0.0.5"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yourusername/universal-repo-mapper.git"
+    "url": "git+https://github.com/ocontant/repomapper.git"
+  },
+  "homepage": "https://github.com/ocontant/repomapper",
+  "bugs": {
+    "url": "https://github.com/ocontant/repomapper/issues"
   },
   "keywords": [
     "codebase",
@@ -37,6 +52,6 @@
   "license": "MIT",
   "preferGlobal": true,
   "engines": {
-    "node": ">=12.0.0"
+    "node": ">=22.15.0"
   }
 }

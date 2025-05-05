@@ -16,7 +16,7 @@ try {
 // Setup commander
 const program = new commander.Command();
 program
-  .name('universal-repo-mapper')
+  .name('repomapper')
   .description('Generate a comprehensive repository map with code structure visualization')
   .version('1.0.0')
   .option('-d, --directory <dir>', 'Target directory to analyze (default: current directory)', process.cwd())
@@ -32,9 +32,27 @@ program
   .option('--install-deps', 'Install required dependencies', false)
   .option('--install-all-langs', 'Install parsers for all supported languages', false)
   .option('--install-langs <langs>', 'Install specific language parsers (comma-separated, e.g., "python,ruby,go")')
+  .option('--global-install', 'Install this tool globally as a CLI command', false)
   .parse(process.argv);
 
 const options = program.opts();
+
+// Handle global installation if requested
+if (options.globalInstall) {
+  console.log('Installing repomapper globally...');
+  try {
+    const { execSync } = require('child_process');
+    execSync('npm link', { stdio: 'inherit' });
+    console.log('\nSuccess! The "repomapper" command has been installed globally.');
+    console.log('You can now run it from anywhere using:');
+    console.log('\n  repomapper [options]\n');
+    process.exit(0);
+  } catch (error) {
+    console.error('Failed to install globally:', error.message);
+    console.error('You might need to run this command with sudo or as administrator.');
+    process.exit(1);
+  }
+}
 
 // Handle dependency installation if requested
 if (options.installDeps || options.installAllLangs || options.installLangs) {
@@ -299,7 +317,18 @@ function extractClasses(tree, language) {
       methodName: 'property_identifier',
       publicField: 'public_field_definition',
       privateField: 'private_field_definition',
-      propertyName: 'property_identifier'
+      propertyName: 'property_identifier',
+      parameter: 'formal_parameter',
+      parameterName: 'identifier',
+      parameterType: 'type_annotation',
+      typeAnnotation: 'type_annotation',
+      returnType: 'return_type',
+      superClass: 'extends_clause',
+      superClassName: 'identifier',
+      implements: 'implements_clause',
+      implementsNames: 'type_identifier',
+      constructor: 'constructor_definition',
+      constructorName: 'property_identifier'
     },
     javascript: {
       classDeclaration: 'class_declaration',
@@ -309,7 +338,13 @@ function extractClasses(tree, language) {
       methodName: 'property_identifier',
       publicField: 'field_definition',
       privateField: 'field_definition',
-      propertyName: 'property_identifier'
+      propertyName: 'property_identifier',
+      parameter: 'formal_parameter',
+      parameterName: 'identifier',
+      superClass: 'extends_clause',
+      superClassName: 'identifier',
+      constructor: 'method_definition',
+      constructorName: 'property_identifier'
     },
     python: {
       classDeclaration: 'class_definition',
@@ -319,7 +354,15 @@ function extractClasses(tree, language) {
       methodName: 'identifier',
       publicField: 'expression_statement',
       privateField: 'expression_statement',
-      propertyName: 'identifier'
+      propertyName: 'identifier',
+      parameter: 'parameters',
+      parameterName: 'identifier',
+      parameterType: 'type',
+      returnType: 'return_type',
+      superClass: 'argument_list',
+      superClassName: 'identifier',
+      constructor: 'function_definition',
+      constructorName: 'identifier'
     },
     ruby: {
       classDeclaration: 'class',
@@ -329,7 +372,13 @@ function extractClasses(tree, language) {
       methodName: 'identifier',
       publicField: 'assignment',
       privateField: 'assignment',
-      propertyName: 'identifier'
+      propertyName: 'identifier',
+      parameter: 'method_parameters',
+      parameterName: 'identifier',
+      superClass: 'superclass',
+      superClassName: 'constant',
+      constructor: 'method',
+      constructorName: 'identifier'
     },
     go: {
       classDeclaration: 'type_declaration',
@@ -339,7 +388,13 @@ function extractClasses(tree, language) {
       methodName: 'field_identifier',
       publicField: 'field_declaration',
       privateField: 'field_declaration',
-      propertyName: 'field_identifier'
+      propertyName: 'field_identifier',
+      parameter: 'parameter_declaration',
+      parameterName: 'identifier',
+      parameterType: 'type_identifier',
+      returnType: 'return_type',
+      constructor: 'function_declaration',
+      constructorName: 'field_identifier'
     },
     java: {
       classDeclaration: 'class_declaration',
@@ -349,7 +404,17 @@ function extractClasses(tree, language) {
       methodName: 'identifier',
       publicField: 'field_declaration',
       privateField: 'field_declaration',
-      propertyName: 'identifier'
+      propertyName: 'identifier',
+      parameter: 'formal_parameter',
+      parameterName: 'identifier',
+      parameterType: 'type_identifier',
+      returnType: 'return_type',
+      superClass: 'superclass',
+      superClassName: 'identifier',
+      implements: 'interfaces',
+      implementsNames: 'identifier',
+      constructor: 'constructor_declaration',
+      constructorName: 'identifier'
     },
     // Default to TypeScript mappings
     default: {
@@ -360,7 +425,15 @@ function extractClasses(tree, language) {
       methodName: 'property_identifier',
       publicField: 'field_definition',
       privateField: 'field_definition',
-      propertyName: 'property_identifier'
+      propertyName: 'property_identifier',
+      parameter: 'formal_parameter',
+      parameterName: 'identifier',
+      parameterType: 'type_annotation',
+      returnType: 'return_type',
+      superClass: 'extends_clause',
+      superClassName: 'identifier',
+      constructor: 'method_definition',
+      constructorName: 'property_identifier'
     }
   };
   
@@ -392,6 +465,29 @@ function extractClasses(tree, language) {
       if (className) {
         const methods = [];
         const properties = [];
+        let constructor = null;
+        let extends_class = null;
+        const implements_interfaces = [];
+        
+        // Check for extends (inheritance)
+        const superClassNode = node.children.find(child => child.type === types.superClass);
+        if (superClassNode) {
+          const superClassNameNode = superClassNode.children.find(c => 
+            c.type === types.superClassName || c.type === types.className);
+          if (superClassNameNode) {
+            extends_class = superClassNameNode.text;
+          }
+        }
+        
+        // Check for implements (interfaces)
+        const implementsNode = node.children.find(child => child.type === types.implements);
+        if (implementsNode) {
+          implementsNode.children.forEach(child => {
+            if (child.type === types.implementsNames || child.type === types.className) {
+              implements_interfaces.push(child.text);
+            }
+          });
+        }
         
         // Find the class body
         const classBody = node.children.find(child => child.type === types.classBody);
@@ -399,8 +495,47 @@ function extractClasses(tree, language) {
         if (classBody) {
           // Process class body
           for (const child of classBody.children) {
+            // Check for constructor
+            const isConstructor = 
+              (child.type === types.constructor) || 
+              (child.type === types.methodDefinition && 
+               child.children.some(c => c.type === types.constructorName && 
+                 (c.text === 'constructor' || c.text === 'initialize' || c.text === '__init__')));
+            
+            if (isConstructor) {
+              const parameters = [];
+              
+              // Find parameters node
+              const paramsNode = child.children.find(c => c.type === types.parameter || 
+                                                        c.type.includes('parameter'));
+              
+              if (paramsNode) {
+                // Extract parameters
+                for (const param of paramsNode.children) {
+                  if (param.type === types.parameterName || param.type === 'identifier') {
+                    const paramName = param.text;
+                    
+                    // Try to get type if available
+                    let paramType = 'any';
+                    const typeNode = param.nextSibling;
+                    if (typeNode && typeNode.type === types.parameterType) {
+                      paramType = typeNode.text.replace(/^:\s*/, '');
+                    }
+                    
+                    parameters.push({
+                      name: paramName,
+                      type: paramType
+                    });
+                  }
+                }
+              }
+              
+              constructor = {
+                parameters
+              };
+            }
             // Methods
-            if (child.type === types.methodDefinition) {
+            else if (child.type === types.methodDefinition) {
               const nameNode = child.children.find(c => c.type === types.methodName);
               
               if (nameNode) {
@@ -425,9 +560,53 @@ function extractClasses(tree, language) {
                   }
                 }
                 
+                // Extract method parameters
+                const parameters = [];
+                
+                // Find parameters node
+                const paramsNode = child.children.find(c => c.type === types.parameter || 
+                                                          c.type.includes('parameter'));
+                
+                if (paramsNode) {
+                  // Extract parameters
+                  for (const param of paramsNode.children) {
+                    if (param.type === types.parameterName || param.type === 'identifier') {
+                      const paramName = param.text;
+                      
+                      // Try to get type if available
+                      let paramType = 'any';
+                      const typeNode = param.nextSibling;
+                      if (typeNode && typeNode.type === types.parameterType) {
+                        paramType = typeNode.text.replace(/^:\s*/, '');
+                      }
+                      
+                      parameters.push({
+                        name: paramName,
+                        type: paramType
+                      });
+                    }
+                  }
+                }
+                
+                // Try to get return type
+                let returnType = 'void';
+                const returnTypeNode = child.children.find(c => c.type === types.returnType || 
+                                                           c.type === types.typeAnnotation);
+                if (returnTypeNode) {
+                  returnType = returnTypeNode.text.replace(/^:\s*/, '').replace(/^->\s*/, '');
+                }
+                
+                // Build method signature
+                const signature = `${nameNode.text}(${parameters.map(p => 
+                  `${p.name}${p.type !== 'any' ? ': ' + p.type : ''}`).join(', ')})${
+                  returnType !== 'void' ? ': ' + returnType : ''}`;
+                
                 methods.push({
                   name: nameNode.text,
-                  visibility
+                  visibility,
+                  parameters,
+                  returnType,
+                  signature
                 });
               }
             } 
@@ -443,9 +622,17 @@ function extractClasses(tree, language) {
                   visibility = nameNode.text.startsWith('_') ? 'private' : 'public';
                 }
                 
+                // Try to get property type
+                let type = 'any';
+                const typeNode = child.children.find(c => c.type === types.typeAnnotation);
+                if (typeNode) {
+                  type = typeNode.text.replace(/^:\s*/, '');
+                }
+                
                 properties.push({
                   name: nameNode.text,
-                  visibility
+                  visibility,
+                  type
                 });
               }
             }
@@ -455,7 +642,10 @@ function extractClasses(tree, language) {
         classes.push({
           name: className,
           methods,
-          properties
+          properties,
+          constructor,
+          extends: extends_class,
+          implements: implements_interfaces
         });
       }
     }
@@ -483,7 +673,17 @@ function extractInterfaces(tree, language) {
       interfaceBody: 'object_type',
       property: 'property_signature',
       propertyName: 'property_identifier',
-      propertyType: 'type_annotation'
+      propertyType: 'type_annotation',
+      method: 'method_signature',
+      methodName: 'property_identifier',
+      parameter: 'formal_parameter',
+      parameterName: 'identifier',
+      parameterType: 'type_annotation',
+      returnType: 'type_annotation',
+      extendsClause: 'extends_clause',
+      extendedInterface: 'type_identifier',
+      typeParameter: 'type_parameters',
+      typeParameterName: 'type_identifier'
     },
     go: {
       interfaceDeclaration: 'type_declaration',
@@ -491,7 +691,15 @@ function extractInterfaces(tree, language) {
       interfaceBody: 'interface_type',
       property: 'method_spec',
       propertyName: 'field_identifier',
-      propertyType: 'type_identifier'
+      propertyType: 'type_identifier',
+      method: 'method_spec',
+      methodName: 'field_identifier',
+      parameter: 'parameter_list',
+      parameterName: 'identifier',
+      parameterType: 'type_identifier',
+      returnType: 'type_identifier',
+      extendsClause: 'type_identifier',
+      extendedInterface: 'type_identifier'
     },
     java: {
       interfaceDeclaration: 'interface_declaration',
@@ -499,7 +707,17 @@ function extractInterfaces(tree, language) {
       interfaceBody: 'interface_body',
       property: 'method_declaration',
       propertyName: 'identifier',
-      propertyType: 'type_identifier'
+      propertyType: 'type_identifier',
+      method: 'method_declaration',
+      methodName: 'identifier',
+      parameter: 'formal_parameter',
+      parameterName: 'identifier',
+      parameterType: 'type_identifier',
+      returnType: 'type_identifier',
+      extendsClause: 'extends_interfaces',
+      extendedInterface: 'identifier',
+      typeParameter: 'type_parameters',
+      typeParameterName: 'type_identifier'
     },
     // Default to TypeScript for other languages
     default: {
@@ -508,7 +726,17 @@ function extractInterfaces(tree, language) {
       interfaceBody: 'object_type',
       property: 'property_signature',
       propertyName: 'property_identifier',
-      propertyType: 'type_annotation'
+      propertyType: 'type_annotation',
+      method: 'method_signature',
+      methodName: 'property_identifier',
+      parameter: 'formal_parameter',
+      parameterName: 'identifier',
+      parameterType: 'type_annotation',
+      returnType: 'type_annotation',
+      extendsClause: 'extends_clause',
+      extendedInterface: 'type_identifier',
+      typeParameter: 'type_parameters',
+      typeParameterName: 'type_identifier'
     }
   };
   
@@ -542,30 +770,132 @@ function extractInterfaces(tree, language) {
       
       if (interfaceName) {
         const properties = [];
+        const methods = [];
+        const extends_interfaces = [];
+        const type_parameters = [];
+        
+        // Check for type parameters (generics)
+        const typeParamNode = node.children.find(child => child.type === types.typeParameter);
+        if (typeParamNode) {
+          for (const param of typeParamNode.children) {
+            if (param.type === types.typeParameterName) {
+              type_parameters.push(param.text);
+            }
+          }
+        }
+        
+        // Check for extended interfaces
+        const extendsNode = node.children.find(child => child.type === types.extendsClause);
+        if (extendsNode) {
+          for (const ext of extendsNode.children) {
+            if (ext.type === types.extendedInterface || ext.type === types.interfaceName) {
+              extends_interfaces.push(ext.text);
+            }
+          }
+        }
         
         // Find interface body
         const body = node.children.find(child => child.type === types.interfaceBody);
         
         if (body) {
-          // Extract properties
-          for (const property of body.children) {
-            if (property.type === types.property) {
-              const nameNode = property.children.find(c => c.type === types.propertyName);
-              const typeNode = property.children.find(c => c.type === types.propertyType);
+          // Extract properties and methods
+          for (const member of body.children) {
+            // Handle properties
+            if (member.type === types.property) {
+              const nameNode = member.children.find(c => c.type === types.propertyName);
+              const typeNode = member.children.find(c => c.type === types.propertyType);
               
               if (nameNode) {
+                const type = typeNode ? typeNode.text.replace(/^:\s*/, '') : 'any';
+                const optional = nameNode.text.endsWith('?');
+                const name = optional ? nameNode.text.slice(0, -1) : nameNode.text;
+                
                 properties.push({
-                  name: nameNode.text,
-                  type: typeNode ? typeNode.text.replace(/^:\s*/, '') : 'any'
+                  name,
+                  type,
+                  optional
+                });
+              }
+            }
+            // Handle methods
+            else if (member.type === types.method) {
+              const nameNode = member.children.find(c => c.type === types.methodName);
+              
+              if (nameNode) {
+                // Check if method is optional
+                const optional = nameNode.text.endsWith('?');
+                const name = optional ? nameNode.text.slice(0, -1) : nameNode.text;
+                
+                // Extract method parameters
+                const parameters = [];
+                const paramsNode = member.children.find(c => c.type === types.parameter ||
+                                                           c.type.includes('parameter'));
+                
+                if (paramsNode) {
+                  // Extract parameters
+                  for (const param of paramsNode.children) {
+                    if (param.type === types.parameterName || param.type === 'identifier') {
+                      const paramName = param.text;
+                      
+                      // Try to get type if available
+                      let paramType = 'any';
+                      const typeNode = param.nextSibling;
+                      if (typeNode && typeNode.type === types.parameterType) {
+                        paramType = typeNode.text.replace(/^:\s*/, '');
+                      }
+                      
+                      parameters.push({
+                        name: paramName,
+                        type: paramType
+                      });
+                    }
+                  }
+                }
+                
+                // Try to get return type
+                let returnType = 'void';
+                const returnTypeNode = member.children.find(c => c.type === types.returnType);
+                if (returnTypeNode) {
+                  returnType = returnTypeNode.text.replace(/^:\s*/, '').replace(/^->\s*/, '');
+                }
+                
+                // Build method signature
+                const signature = `${name}(${parameters.map(p => 
+                  `${p.name}${p.type !== 'any' ? ': ' + p.type : ''}`).join(', ')})${
+                  returnType !== 'void' ? ': ' + returnType : ''}`;
+                
+                methods.push({
+                  name,
+                  parameters,
+                  returnType,
+                  optional,
+                  signature
                 });
               }
             }
           }
         }
         
+        // Format the full interface signature with type parameters and extends
+        let fullSignature = `interface ${interfaceName}`;
+        
+        // Add type parameters if any
+        if (type_parameters.length > 0) {
+          fullSignature += `<${type_parameters.join(', ')}>`;
+        }
+        
+        // Add extended interfaces if any
+        if (extends_interfaces.length > 0) {
+          fullSignature += ` extends ${extends_interfaces.join(', ')}`;
+        }
+        
         interfaces.push({
           name: interfaceName,
-          properties
+          properties,
+          methods,
+          extends: extends_interfaces,
+          typeParameters: type_parameters,
+          signature: fullSignature
         });
       }
     }
@@ -578,6 +908,361 @@ function extractInterfaces(tree, language) {
   }
   
   return interfaces;
+}
+
+// Extract standalone functions from AST
+function extractFunctions(tree, language) {
+  const functions = [];
+  
+  // Define function-related node types for different languages
+  const nodeTypes = {
+    typescript: {
+      functionDeclaration: 'function_declaration',
+      functionExpression: 'function_expression',
+      arrowFunction: 'arrow_function',
+      functionName: 'identifier',
+      parameter: 'formal_parameters',
+      parameterName: 'identifier',
+      parameterType: 'type_annotation',
+      returnType: 'return_type',
+      exportKeyword: 'export_statement',
+      defaultKeyword: 'default',
+      asyncKeyword: 'async'
+    },
+    javascript: {
+      functionDeclaration: 'function_declaration',
+      functionExpression: 'function_expression',
+      arrowFunction: 'arrow_function',
+      functionName: 'identifier',
+      parameter: 'formal_parameters',
+      parameterName: 'identifier',
+      exportKeyword: 'export_statement',
+      defaultKeyword: 'default',
+      asyncKeyword: 'async'
+    },
+    python: {
+      functionDeclaration: 'function_definition',
+      functionName: 'identifier',
+      parameter: 'parameters',
+      parameterName: 'identifier',
+      parameterType: 'type',
+      returnType: 'return_type',
+      decoratorList: 'decorator',
+      asyncKeyword: 'async'
+    },
+    ruby: {
+      functionDeclaration: 'method',
+      functionName: 'identifier',
+      parameter: 'method_parameters',
+      parameterName: 'identifier'
+    },
+    go: {
+      functionDeclaration: 'function_declaration',
+      functionName: 'identifier',
+      parameter: 'parameter_list',
+      parameterName: 'identifier',
+      parameterType: 'type_identifier',
+      returnType: 'return_type'
+    },
+    java: {
+      functionDeclaration: 'method_declaration',
+      functionName: 'identifier',
+      parameter: 'formal_parameters',
+      parameterName: 'identifier',
+      parameterType: 'type_identifier',
+      returnType: 'type_identifier',
+      staticKeyword: 'static',
+      publicKeyword: 'public',
+      privateKeyword: 'private',
+      protectedKeyword: 'protected'
+    },
+    // Default to JavaScript mappings
+    default: {
+      functionDeclaration: 'function_declaration',
+      functionExpression: 'function_expression',
+      arrowFunction: 'arrow_function',
+      functionName: 'identifier',
+      parameter: 'formal_parameters',
+      parameterName: 'identifier',
+      parameterType: 'type_annotation',
+      returnType: 'return_type',
+      exportKeyword: 'export_statement',
+      defaultKeyword: 'default',
+      asyncKeyword: 'async'
+    }
+  };
+  
+  // Get the appropriate node types for the language
+  const types = nodeTypes[language] || nodeTypes.default;
+  
+  // Build a stack of nodes to traverse
+  let nodeStack = [{node: tree.rootNode, done: false}];
+  
+  while (nodeStack.length > 0) {
+    const {node, done} = nodeStack.pop();
+    
+    if (done) {
+      continue;
+    }
+    
+    // Check for function declarations, expressions, and arrow functions
+    if (
+      node.type === types.functionDeclaration || 
+      node.type === types.functionExpression || 
+      node.type === types.arrowFunction
+    ) {
+      let functionName;
+      let isAnonymous = false;
+      let isExported = false;
+      let isDefault = false;
+      let isAsync = false;
+      let isStatic = false;
+      let visibility = 'public'; // Default to public
+      
+      // Check if this function is part of an export statement
+      let currentNode = node;
+      let parentNode = currentNode.parent;
+      
+      while (parentNode && !functionName) {
+        // Check for export statement
+        if (parentNode.type === types.exportKeyword || parentNode.type.includes('export')) {
+          isExported = true;
+          // Check if it's a default export
+          if (parentNode.children.some(child => 
+            child.type === types.defaultKeyword || child.type.includes('default')
+          )) {
+            isDefault = true;
+          }
+        }
+        
+        // Check for assignments to identify function expressions being assigned to variables
+        if (
+          (parentNode.type === 'variable_declarator' || 
+           parentNode.type === 'assignment_expression') && 
+          !functionName
+        ) {
+          // Get the variable/property name
+          const nameNode = parentNode.children.find(child => 
+            child.type === 'identifier' || 
+            child.type === 'property_identifier'
+          );
+          if (nameNode) {
+            functionName = nameNode.text;
+          }
+        }
+        
+        currentNode = parentNode;
+        parentNode = currentNode.parent;
+      }
+      
+      // For direct function declarations, get the name
+      if (!functionName && node.type === types.functionDeclaration) {
+        const nameNode = node.children.find(child => child.type === types.functionName);
+        if (nameNode) {
+          functionName = nameNode.text;
+        }
+      }
+      
+      // If still no name, it's anonymous
+      if (!functionName) {
+        isAnonymous = true;
+        functionName = '<anonymous>';
+      }
+      
+      // Check for async modifier
+      if (node.children.some(child => 
+        child.type === types.asyncKeyword || child.type.includes('async')
+      )) {
+        isAsync = true;
+      }
+      
+      // Check for static modifier (Java/C#/TypeScript class methods)
+      if (types.staticKeyword && node.children.some(child => 
+        child.type === types.staticKeyword || child.type.includes('static')
+      )) {
+        isStatic = true;
+      }
+      
+      // Check visibility modifiers for languages that support them
+      if (types.publicKeyword && node.children.some(child => 
+        child.type === types.publicKeyword || child.type.includes('public')
+      )) {
+        visibility = 'public';
+      } else if (types.privateKeyword && node.children.some(child => 
+        child.type === types.privateKeyword || child.type.includes('private')
+      )) {
+        visibility = 'private';
+      } else if (types.protectedKeyword && node.children.some(child => 
+        child.type === types.protectedKeyword || child.type.includes('protected')
+      )) {
+        visibility = 'protected';
+      }
+      
+      // Gather parameters
+      const parameters = [];
+      const paramNode = node.children.find(child => 
+        child.type === types.parameter || child.type.includes('parameter')
+      );
+      
+      if (paramNode) {
+        // Process different parameter patterns by language
+        if (language === 'javascript' || language === 'typescript') {
+          // JS/TS parameters are direct children of the formal_parameters node
+          for (const param of paramNode.children) {
+            if (param.type === types.parameterName || param.type === 'identifier') {
+              const paramName = param.text;
+              
+              // Try to get type if available (TypeScript)
+              let paramType = 'any';
+              const typeAnnotation = param.nextSibling;
+              if (typeAnnotation && typeAnnotation.type === types.parameterType) {
+                paramType = typeAnnotation.text.replace(/^:\s*/, '');
+              }
+              
+              parameters.push({
+                name: paramName,
+                type: paramType
+              });
+            }
+          }
+        } else if (language === 'python') {
+          // Python parameters
+          for (const param of paramNode.children) {
+            if (param.type === 'identifier') {
+              const paramName = param.text;
+              
+              // Check for type annotation
+              let paramType = 'any';
+              if (param.nextSibling && param.nextSibling.type === 'type') {
+                paramType = param.nextSibling.text;
+              }
+              
+              parameters.push({
+                name: paramName,
+                type: paramType
+              });
+            }
+          }
+        } else {
+          // Generic approach for other languages
+          for (const param of paramNode.children) {
+            if (param.type === types.parameterName || param.type === 'identifier') {
+              const paramName = param.text;
+              
+              // Try to get parameter type if available
+              let paramType = 'any';
+              if (types.parameterType) {
+                const typeNode = param.nextSibling || param.parent.children.find(c => c.type === types.parameterType);
+                if (typeNode && typeNode.type.includes('type')) {
+                  paramType = typeNode.text;
+                }
+              }
+              
+              parameters.push({
+                name: paramName,
+                type: paramType
+              });
+            }
+          }
+        }
+      }
+      
+      // Get return type if available
+      let returnType = 'void';
+      
+      if (types.returnType) {
+        const returnTypeNode = node.children.find(child => 
+          child.type === types.returnType || child.type.includes('return_type')
+        );
+        
+        if (returnTypeNode) {
+          returnType = returnTypeNode.text.replace(/^:\s*/, '').replace(/^->\s*/, '');
+        }
+      }
+      
+      // Get decorators for Python functions
+      const decorators = [];
+      if (language === 'python' && types.decoratorList) {
+        const decoratorNodes = node.parent ? 
+          node.parent.children.filter(child => child.type === types.decoratorList) : 
+          [];
+        
+        for (const decorator of decoratorNodes) {
+          const decoratorName = decorator.children.find(child => child.type === 'identifier');
+          if (decoratorName) {
+            decorators.push(decoratorName.text);
+          }
+        }
+      }
+      
+      // Generate signature based on language
+      let signature;
+      
+      if (language === 'typescript') {
+        signature = `${isAsync ? 'async ' : ''}function ${functionName}(${
+          parameters.map(p => `${p.name}: ${p.type}`).join(', ')
+        })${returnType !== 'void' ? ': ' + returnType : ''}`;
+      } else if (language === 'javascript') {
+        signature = `${isAsync ? 'async ' : ''}function ${functionName}(${
+          parameters.map(p => p.name).join(', ')
+        })`;
+      } else if (language === 'python') {
+        signature = `${isAsync ? 'async ' : ''}def ${functionName}(${
+          parameters.map(p => `${p.name}${p.type !== 'any' ? ': ' + p.type : ''}`).join(', ')
+        })${returnType !== 'void' ? ' -> ' + returnType : ''}`;
+      } else if (language === 'go') {
+        signature = `func ${functionName}(${
+          parameters.map(p => `${p.name} ${p.type}`).join(', ')
+        }) ${returnType !== 'void' ? returnType : ''}`;
+      } else if (language === 'java') {
+        signature = `${visibility} ${isStatic ? 'static ' : ''}${returnType} ${functionName}(${
+          parameters.map(p => `${p.type} ${p.name}`).join(', ')
+        })`;
+      } else {
+        // Generic signature for other languages
+        signature = `function ${functionName}(${parameters.map(p => p.name).join(', ')})`;
+      }
+      
+      // Get function description from comments if available
+      let description = '';
+      if (node.previousSibling && 
+          (node.previousSibling.type === 'comment' || 
+           node.previousSibling.type.includes('comment'))) {
+        description = node.previousSibling.text
+          .replace(/^\/\*\*/, '') // Remove JSDoc start
+          .replace(/\*\/$/, '')   // Remove JSDoc end
+          .replace(/^\s*\/\/\s*/gm, '') // Remove line comments
+          .replace(/^\s*\*\s*/gm, '')  // Remove JSDoc line stars
+          .trim();
+      }
+      
+      functions.push({
+        name: functionName,
+        isAnonymous,
+        isExported,
+        isDefault,
+        isAsync,
+        isStatic,
+        visibility,
+        parameters,
+        returnType,
+        signature,
+        decorators,
+        description,
+        startLine: node.startPosition.row + 1,
+        endLine: node.endPosition.row + 1
+      });
+    }
+    
+    // Continue traversing the tree
+    nodeStack.push({node, done: true});
+    
+    for (let i = node.children.length - 1; i >= 0; i--) {
+      nodeStack.push({node: node.children[i], done: false});
+    }
+  }
+  
+  return functions;
 }
 
 // Extract imports from AST
@@ -762,6 +1447,180 @@ function extractDecorators(tree, language) {
   return decorators;
 }
 
+// Detect entry points based on code structure
+function detectEntryPoints(fileInfo, content, language) {
+  const entryPoints = {
+    cli: [],
+    api: [],
+    webService: [],
+    program: [],
+    exportedFunctions: [],
+    moduleExports: []
+  };
+  
+  // Function to check if a file appears to be a main entry point
+  const isMainFile = (fileName) => {
+    return fileName === 'main.js' || 
+           fileName === 'main.ts' || 
+           fileName === 'index.js' || 
+           fileName === 'index.ts' || 
+           fileName === 'app.js' || 
+           fileName === 'app.ts' || 
+           fileName === 'server.js' || 
+           fileName === 'server.ts' ||
+           fileName.endsWith('.cli.js') ||
+           fileName.endsWith('.cli.ts') ||
+           fileName.includes('main');
+  };
+  
+  const fileName = path.basename(fileInfo.path);
+  
+  // Check for shebang line for CLI apps
+  if (content.trim().startsWith('#!')) {
+    entryPoints.cli.push({
+      type: 'cli',
+      path: fileInfo.path,
+      name: path.basename(fileInfo.path, path.extname(fileInfo.path)),
+      usage: `${path.basename(fileInfo.path)} [options]`
+    });
+  }
+  
+  // Look for commander, yargs, or other CLI frameworks
+  if (content.includes('commander') || 
+      content.includes('yargs') || 
+      content.includes('program.parse') || 
+      content.includes('ArgumentParser') || 
+      content.includes('click') ||
+      content.includes('optparse')) {
+    
+    // Extract CLI commands and options if possible
+    const commandMatches = content.match(/program\.command\(['"](.*?)['"]/g) || [];
+    const optionMatches = content.match(/program\.option\(['"](.*?)['"]/g) || [];
+    
+    // If using commander, extract possible command format
+    if (commandMatches.length > 0 || optionMatches.length > 0) {
+      let usage = `${path.basename(fileInfo.path, path.extname(fileInfo.path))}`;
+      
+      // Add command and option placeholders
+      if (commandMatches.length > 0) {
+        usage += ' <command>';
+      }
+      
+      if (optionMatches.length > 0) {
+        usage += ' [options]';
+      }
+      
+      entryPoints.cli.push({
+        type: 'cli',
+        path: fileInfo.path,
+        name: path.basename(fileInfo.path, path.extname(fileInfo.path)),
+        commands: commandMatches.map(cmd => cmd.replace(/program\.command\(['"]|['"].*$/g, '')),
+        options: optionMatches.map(opt => opt.replace(/program\.option\(['"]|['"].*$/g, '')),
+        usage
+      });
+    }
+  }
+  
+  // Check for web server / API code
+  if (content.includes('express') || 
+      content.includes('app.listen') || 
+      content.includes('http.createServer') || 
+      content.includes('app.get(') || 
+      content.includes('app.post(') || 
+      content.includes('app.use(') || 
+      content.includes('router.') || 
+      content.includes('@Controller') ||
+      content.includes('Flask(') ||
+      content.includes('django')) {
+    
+    // Try to identify the port the server is running on
+    const portMatch = content.match(/\.listen\((\d+)/) || 
+                     content.match(/port\s*=\s*(\d+)/) || 
+                     content.match(/PORT\s*=\s*(\d+)/);
+    
+    const port = portMatch ? portMatch[1] : '3000'; // Default to common port if not found
+    
+    // Try to find route definitions
+    const routeMatches = content.match(/app\.(get|post|put|delete|patch)\(['"](.*?)['"]/g) || [];
+    const routePattern = /app\.(get|post|put|delete|patch)\(['"](.*?)['"]/;
+    
+    const routes = routeMatches.map(route => {
+      const match = route.match(routePattern);
+      if (match && match.length >= 3) {
+        return {
+          method: match[1].toUpperCase(),
+          path: match[2]
+        };
+      }
+      return null;
+    }).filter(Boolean);
+    
+    entryPoints.webService.push({
+      type: 'webService',
+      path: fileInfo.path,
+      name: path.basename(fileInfo.path, path.extname(fileInfo.path)),
+      port,
+      url: `http://localhost:${port}`,
+      routes
+    });
+  }
+  
+  // Look for exported functions or module.exports
+  if (['javascript', 'typescript'].includes(language)) {
+    const exportedFuncMatches = content.match(/export(\s+default)?\s+function\s+(\w+)/g) || [];
+    const moduleExportsMatches = content.match(/module\.exports\s*=\s*{([\s\S]*?)}/g) || [];
+    
+    // Extract exported function names
+    exportedFuncMatches.forEach(match => {
+      const funcNameMatch = match.match(/function\s+(\w+)/);
+      if (funcNameMatch && funcNameMatch[1]) {
+        entryPoints.exportedFunctions.push({
+          type: 'exportedFunction',
+          name: funcNameMatch[1],
+          isDefault: match.includes('default'),
+          path: fileInfo.path
+        });
+      }
+    });
+    
+    // Extract module.exports properties
+    if (moduleExportsMatches.length > 0) {
+      const propertiesMatch = moduleExportsMatches[0].match(/module\.exports\s*=\s*{([\s\S]*?)}/);
+      if (propertiesMatch && propertiesMatch[1]) {
+        const properties = propertiesMatch[1]
+          .split(',')
+          .map(prop => prop.trim())
+          .filter(Boolean)
+          .map(prop => {
+            const keyValue = prop.split(':');
+            return keyValue[0].trim();
+          });
+        
+        entryPoints.moduleExports.push({
+          type: 'moduleExport',
+          path: fileInfo.path,
+          exports: properties
+        });
+      }
+    }
+  }
+  
+  // Check if this is a main program file
+  if (isMainFile(fileName) || 
+      content.includes('public static void main(') || // Java
+      content.includes('if __name__ == "__main__"') || // Python
+      content.match(/func\s+main\(\)/)) { // Go
+    
+    entryPoints.program.push({
+      type: 'program',
+      path: fileInfo.path,
+      name: path.basename(fileInfo.path, path.extname(fileInfo.path))
+    });
+  }
+  
+  return entryPoints;
+}
+
 // Process a file to extract code elements - updated for more generic classifications
 async function processFile(filePath, parser, language) {
   console.log(`Processing ${filePath}...`);
@@ -770,8 +1629,10 @@ async function processFile(filePath, parser, language) {
     path: filePath,
     classes: [],
     interfaces: [],
+    functions: [],
     imports: [],
     decorators: [],
+    entryPoints: null,
     
     // More generic file type classification without framework-specific assumptions
     isComponent: false,
@@ -784,6 +1645,7 @@ async function processFile(filePath, parser, language) {
     isStylesheet: false,
     isResource: false,
     isScript: false,
+    isEntryPoint: false,
     
     // Keep original flags for backward compatibility
     isModule: false,
@@ -804,8 +1666,15 @@ async function processFile(filePath, parser, language) {
     // Extract data
     fileInfo.classes = extractClasses(tree, language);
     fileInfo.interfaces = extractInterfaces(tree, language);
+    fileInfo.functions = extractFunctions(tree, language);
     fileInfo.imports = extractImports(tree, language);
     fileInfo.decorators = extractDecorators(tree, language);
+    
+    // Detect entry points like CLI, API, services
+    fileInfo.entryPoints = detectEntryPoints(fileInfo, content, language);
+    
+    // If any entry points are found, mark this as an entry point file
+    fileInfo.isEntryPoint = Object.values(fileInfo.entryPoints).some(arr => arr.length > 0);
     
     // Get filename and path info for classification
     const fileName = path.basename(filePath).toLowerCase();
@@ -954,6 +1823,513 @@ async function processFile(filePath, parser, language) {
     console.error(`Error processing ${filePath}:`, error.message);
     return fileInfo;
   }
+}
+
+// Identify logical modules in the codebase based on functionality
+function detectLogicalModules(filesInfo) {
+  // Define logical module categories
+  const logicalModules = {
+    'Entry Point': {
+      files: [],
+      description: 'Main entry points and CLI interface',
+      functions: [],
+      classes: [],
+      interfaces: [],
+      dependencies: []
+    },
+    'Language Detection': {
+      files: [],
+      description: 'Code for detecting and loading language parsers',
+      functions: [],
+      classes: [],
+      interfaces: [],
+      dependencies: []
+    },
+    'File Processing': {
+      files: [],
+      description: 'Code for finding and reading files',
+      functions: [],
+      classes: [],
+      interfaces: [],
+      dependencies: []
+    },
+    'Code Analysis': {
+      files: [],
+      description: 'Class, interface, and function extraction',
+      functions: [],
+      classes: [],
+      interfaces: [],
+      dependencies: []
+    },
+    'Dependency Analysis': {
+      files: [],
+      description: 'Code for building dependency graphs',
+      functions: [],
+      classes: [],
+      interfaces: [],
+      dependencies: []
+    },
+    'Documentation Generation': {
+      files: [],
+      description: 'Code for generating markdown documentation',
+      functions: [],
+      classes: [],
+      interfaces: [],
+      dependencies: []
+    },
+    'Utility': {
+      files: [],
+      description: 'Helper functions and utilities',
+      functions: [],
+      classes: [],
+      interfaces: [],
+      dependencies: []
+    },
+    'Dependency Management': {
+      files: [],
+      description: 'Code for installing and managing dependencies',
+      functions: [],
+      classes: [],
+      interfaces: [],
+      dependencies: []
+    }
+  };
+  
+  // Map functions to modules based on function name and content
+  filesInfo.forEach(fileInfo => {
+    // Add file to appropriate module based on its functions
+    let fileAdded = false;
+    
+    if (fileInfo.isEntryPoint) {
+      logicalModules['Entry Point'].files.push(fileInfo.path);
+      fileAdded = true;
+    }
+    
+    // Process functions from the file
+    if (fileInfo.functions) {
+      fileInfo.functions.forEach(func => {
+        let moduleKey = null;
+        
+        // Determine logical module based on function name/purpose
+        if (func.name === 'main') {
+          moduleKey = 'Entry Point';
+        } else if (func.name.includes('detectLanguage') || func.name.includes('loadLanguageParser')) {
+          moduleKey = 'Language Detection';
+        } else if (func.name.includes('findFiles') || func.name.includes('readFileContent')) {
+          moduleKey = 'File Processing';
+        } else if (func.name.includes('extract') || func.name.includes('processFile')) {
+          moduleKey = 'Code Analysis';
+        } else if (func.name.includes('buildDependency') || func.name.includes('Graph')) {
+          moduleKey = 'Dependency Analysis';
+        } else if (func.name.includes('generate') || func.name.includes('markdown')) {
+          moduleKey = 'Documentation Generation';
+        } else if (func.name.includes('install') || func.name.includes('Dependencies')) {
+          moduleKey = 'Dependency Management';
+        } else {
+          moduleKey = 'Utility';
+        }
+        
+        // Add function to the appropriate module
+        if (moduleKey) {
+          logicalModules[moduleKey].functions.push({
+            name: func.name,
+            signature: func.signature,
+            description: func.description,
+            parameters: func.parameters,
+            returnType: func.returnType,
+            sourceFile: fileInfo.path,
+            startLine: func.startLine,
+            endLine: func.endLine
+          });
+          
+          // Add file to module if not already added
+          if (!fileAdded && !logicalModules[moduleKey].files.includes(fileInfo.path)) {
+            logicalModules[moduleKey].files.push(fileInfo.path);
+            fileAdded = true;
+          }
+        }
+      });
+    }
+    
+    // Add classes to appropriate modules
+    fileInfo.classes.forEach(cls => {
+      let moduleKey = null;
+      
+      // Determine module based on class name
+      if (cls.name.includes('Parser') || cls.name.includes('Analyzer')) {
+        moduleKey = 'Code Analysis';
+      } else if (cls.name.includes('Generator') || cls.name.includes('Markdown')) {
+        moduleKey = 'Documentation Generation';
+      } else {
+        moduleKey = 'Utility'; // Default
+      }
+      
+      // Add class to the appropriate module
+      logicalModules[moduleKey].classes.push({
+        name: cls.name,
+        methods: cls.methods,
+        properties: cls.properties,
+        extends: cls.extends,
+        implements: cls.implements,
+        sourceFile: fileInfo.path
+      });
+      
+      // Add file to module if not already added
+      if (!fileAdded && !logicalModules[moduleKey].files.includes(fileInfo.path)) {
+        logicalModules[moduleKey].files.push(fileInfo.path);
+        fileAdded = true;
+      }
+    });
+    
+    // If file hasn't been categorized based on functions or classes, add it to Utility
+    if (!fileAdded && fileInfo.path) {
+      logicalModules['Utility'].files.push(fileInfo.path);
+    }
+  });
+  
+  // For each module, determine dependencies between them
+  Object.keys(logicalModules).forEach(moduleKey => {
+    const module = logicalModules[moduleKey];
+    
+    // Create a set of all function names in this module
+    const moduleFunctionNames = new Set(module.functions.map(f => f.name));
+    
+    // For each function in the module, check for calls to functions in other modules
+    module.functions.forEach(func => {
+      if (func.description) {
+        // Check function description for mentions of other functions
+        Object.keys(logicalModules).forEach(otherModuleKey => {
+          if (otherModuleKey === moduleKey) return; // Skip self
+          
+          const otherModule = logicalModules[otherModuleKey];
+          const otherFunctions = otherModule.functions.map(f => f.name);
+          
+          // Check if this function mentions any function from the other module
+          const mentions = otherFunctions.filter(otherFunc => 
+            func.description.includes(otherFunc) || 
+            (func.signature && func.signature.includes(otherFunc))
+          );
+          
+          if (mentions.length > 0 && !module.dependencies.includes(otherModuleKey)) {
+            module.dependencies.push(otherModuleKey);
+          }
+        });
+      }
+    });
+  });
+  
+  return logicalModules;
+}
+
+// Identify module interfaces (exported classes, functions, types)
+function detectModuleInterfaces(filesInfo) {
+  const moduleInterfaces = {};
+  
+  // First, identify logical modules
+  const logicalModules = detectLogicalModules(filesInfo);
+  
+  filesInfo.forEach(fileInfo => {
+    const moduleName = path.basename(fileInfo.path, path.extname(fileInfo.path));
+    
+    // Initialize entry if it doesn't exist
+    if (!moduleInterfaces[moduleName]) {
+      moduleInterfaces[moduleName] = {
+        path: fileInfo.path,
+        exportedClasses: [],
+        exportedFunctions: [],
+        exportedInterfaces: [],
+        defaultExport: null,
+        isEntryPoint: fileInfo.isEntryPoint,
+        usageExamples: [],
+        // Add logical module categorization
+        logicalModule: determineLogicalModule(fileInfo, logicalModules)
+      };
+    }
+    
+    // Add exported classes (look for classes with public methods)
+    fileInfo.classes.forEach(classInfo => {
+      // Consider a class as exported if:
+      // 1. The file has export statements and likely contains this class
+      // 2. This is an entry point file (like main file)
+      // 3. This is a significant component/service class
+      
+      const hasPublicMethods = classInfo.methods && classInfo.methods.some(m => m.visibility === 'public');
+      
+      if (hasPublicMethods) {
+        // Build class usage example
+        let usageExample = '';
+        let constructorParams = '';
+        
+        if (classInfo.constructor && classInfo.constructor.parameters) {
+          constructorParams = classInfo.constructor.parameters
+            .map(p => `${p.name}: ${p.type}`)
+            .join(', ');
+        }
+        
+        // Create basic usage example
+        if (fileInfo.imports.some(imp => imp.includes('require'))) {
+          // CommonJS style
+          usageExample = `const { ${classInfo.name} } = require('${moduleName}');\nconst instance = new ${classInfo.name}(${constructorParams});`;
+        } else {
+          // ES Module style
+          usageExample = `import { ${classInfo.name} } from '${moduleName}';\nconst instance = new ${classInfo.name}(${constructorParams});`;
+        }
+        
+        moduleInterfaces[moduleName].exportedClasses.push({
+          name: classInfo.name,
+          constructorParams: classInfo.constructor ? classInfo.constructor.parameters : [],
+          publicMethods: classInfo.methods.filter(m => m.visibility === 'public'),
+          properties: classInfo.properties,
+          extends: classInfo.extends,
+          implements: classInfo.implements,
+          usageExample,
+          // Add logical module categorization
+          logicalModule: getClassLogicalModule(classInfo, logicalModules)
+        });
+        
+        // Add to usage examples
+        moduleInterfaces[moduleName].usageExamples.push({
+          type: 'class',
+          name: classInfo.name,
+          example: usageExample
+        });
+      }
+    });
+    
+    // Add exported functions from the standalone function list
+    if (fileInfo.functions) {
+      fileInfo.functions.forEach(func => {
+        if (func.isExported) {
+          // Build function usage example
+          let usageExample = '';
+          
+          // Create different examples based on how the function is exported
+          if (func.isDefault) {
+            // Default export
+            usageExample = `import ${func.name} from '${moduleName}';\n${func.name}(${func.parameters.map(p => p.name).join(', ')});`;
+            
+            // Track default export separately
+            moduleInterfaces[moduleName].defaultExport = {
+              type: 'function',
+              name: func.name,
+              signature: func.signature,
+              parameters: func.parameters,
+              returnType: func.returnType,
+              usageExample,
+              // Add logical module categorization
+              logicalModule: getFunctionLogicalModule(func, logicalModules)
+            };
+          } else {
+            // Named export
+            usageExample = `import { ${func.name} } from '${moduleName}';\n${func.name}(${func.parameters.map(p => p.name).join(', ')});`;
+            
+            moduleInterfaces[moduleName].exportedFunctions.push({
+              name: func.name,
+              signature: func.signature,
+              parameters: func.parameters,
+              returnType: func.returnType,
+              description: func.description,
+              usageExample,
+              // Add logical module categorization
+              logicalModule: getFunctionLogicalModule(func, logicalModules)
+            });
+          }
+          
+          // Add to usage examples
+          moduleInterfaces[moduleName].usageExamples.push({
+            type: 'function',
+            name: func.name,
+            example: usageExample
+          });
+        }
+      });
+    }
+    
+    // Add exported interfaces
+    fileInfo.interfaces.forEach(iface => {
+      // Check if filename matches interface name, which is a common pattern for exported interfaces
+      const filenameRoot = path.basename(fileInfo.path, path.extname(fileInfo.path));
+      
+      // Consider an interface likely exported if:
+      // 1. Filename has interface or type in name
+      // 2. File is a in models/types/interfaces directory 
+      // 3. Filename matches interface name (common pattern)
+      const isLikelyExported = 
+        filenameRoot.includes('interface') || 
+        filenameRoot.includes('type') || 
+        fileInfo.isDataModel || 
+        filenameRoot.toLowerCase() === iface.name.toLowerCase();
+      
+      if (isLikelyExported) {
+        // Build interface usage example
+        let usageExample = '';
+        
+        // Create example
+        usageExample = `import { ${iface.name} } from '${moduleName}';\n\n// Example usage:\nconst data: ${iface.name} = {\n`;
+        
+        // Add sample property values
+        if (iface.properties && iface.properties.length > 0) {
+          iface.properties.forEach(prop => {
+            // Skip optional properties for brevity
+            if (!prop.optional) {
+              let sampleValue = '';
+              
+              // Generate appropriate sample values based on type
+              if (prop.type.includes('string')) {
+                sampleValue = `'sample ${prop.name}'`;
+              } else if (prop.type.includes('number')) {
+                sampleValue = '0';
+              } else if (prop.type.includes('boolean')) {
+                sampleValue = 'false';
+              } else if (prop.type.includes('[]')) {
+                sampleValue = '[]';
+              } else if (prop.type.includes('object')) {
+                sampleValue = '{}';
+              } else {
+                sampleValue = 'undefined /* provide appropriate value */';
+              }
+              
+              usageExample += `  ${prop.name}: ${sampleValue},\n`;
+            }
+          });
+        }
+        
+        usageExample += '};';
+        
+        moduleInterfaces[moduleName].exportedInterfaces.push({
+          name: iface.name,
+          properties: iface.properties,
+          methods: iface.methods,
+          signature: iface.signature,
+          extends: iface.extends,
+          typeParameters: iface.typeParameters,
+          usageExample,
+          // Add logical module categorization - most interfaces belong to the Code Analysis module
+          logicalModule: 'Code Analysis'
+        });
+        
+        // Add to usage examples
+        moduleInterfaces[moduleName].usageExamples.push({
+          type: 'interface',
+          name: iface.name,
+          example: usageExample
+        });
+      }
+    });
+    
+    // Check for entry points - CLI, API, services etc.
+    if (fileInfo.entryPoints) {
+      // CLI entry points
+      if (fileInfo.entryPoints.cli && fileInfo.entryPoints.cli.length > 0) {
+        fileInfo.entryPoints.cli.forEach(cli => {
+          moduleInterfaces[moduleName].usageExamples.push({
+            type: 'cli',
+            name: cli.name,
+            example: `# Command line usage:\n${cli.usage}`
+          });
+        });
+      }
+      
+      // Web service / API entry points
+      if (fileInfo.entryPoints.webService && fileInfo.entryPoints.webService.length > 0) {
+        fileInfo.entryPoints.webService.forEach(service => {
+          // Generate example for each route if available
+          if (service.routes && service.routes.length > 0) {
+            service.routes.forEach(route => {
+              moduleInterfaces[moduleName].usageExamples.push({
+                type: 'api',
+                name: `${route.method} ${route.path}`,
+                example: `# API Endpoint:\n${route.method} ${service.url}${route.path}`
+              });
+            });
+          } else {
+            // Generic web service example if no specific routes
+            moduleInterfaces[moduleName].usageExamples.push({
+              type: 'webService',
+              name: service.name,
+              example: `# Web Service:\nService running at ${service.url}`
+            });
+          }
+        });
+      }
+    }
+  });
+  
+  // Add the logical modules to the result
+  moduleInterfaces._logicalModules = logicalModules;
+  
+  return moduleInterfaces;
+}
+
+// Helper function to determine which logical module a file belongs to
+function determineLogicalModule(fileInfo, logicalModules) {
+  // Check each logical module to see if this file is included
+  for (const [moduleName, module] of Object.entries(logicalModules)) {
+    if (module.files.includes(fileInfo.path)) {
+      return moduleName;
+    }
+  }
+  
+  // If not found in any logical module, determine based on file characteristics
+  if (fileInfo.isEntryPoint) {
+    return 'Entry Point';
+  } else if (fileInfo.functions && fileInfo.functions.some(f => 
+    f.name.includes('extract') || f.name.includes('parse')
+  )) {
+    return 'Code Analysis';
+  } else if (fileInfo.functions && fileInfo.functions.some(f => 
+    f.name.includes('generate')
+  )) {
+    return 'Documentation Generation';
+  }
+  
+  return 'Utility'; // Default
+}
+
+// Helper function to determine which logical module a function belongs to
+function getFunctionLogicalModule(func, logicalModules) {
+  // Check each logical module to see if this function is included
+  for (const [moduleName, module] of Object.entries(logicalModules)) {
+    if (module.functions.some(f => f.name === func.name)) {
+      return moduleName;
+    }
+  }
+  
+  // If not found, determine based on function name/signature
+  if (func.name === 'main') {
+    return 'Entry Point';
+  } else if (func.name.includes('Language') || func.name.includes('Parser')) {
+    return 'Language Detection';
+  } else if (func.name.includes('extract') || func.name.includes('parse')) {
+    return 'Code Analysis';
+  } else if (func.name.includes('generate') || func.name.includes('markdown')) {
+    return 'Documentation Generation';
+  } else if (func.name.includes('find') || func.name.includes('read')) {
+    return 'File Processing';
+  }
+  
+  return 'Utility'; // Default
+}
+
+// Helper function to determine which logical module a class belongs to
+function getClassLogicalModule(cls, logicalModules) {
+  // Check each logical module to see if this class is included
+  for (const [moduleName, module] of Object.entries(logicalModules)) {
+    if (module.classes.some(c => c.name === cls.name)) {
+      return moduleName;
+    }
+  }
+  
+  // If not found, determine based on class name/characteristics
+  if (cls.name.includes('Parser') || cls.name.includes('Extractor')) {
+    return 'Code Analysis';
+  } else if (cls.name.includes('Generator') || cls.name.includes('Markdown')) {
+    return 'Documentation Generation';
+  } else if (cls.name.includes('File') || cls.name.includes('Reader')) {
+    return 'File Processing';
+  }
+  
+  return 'Utility'; // Default
 }
 
 // Build dependency graph between files
@@ -1469,12 +2845,13 @@ function generateModuleDiagram(features, language) {
 function generateRoutingDiagram(filesInfo) {
   // Skip if routing diagram is disabled
   if (!options.routes) {
-  return '';
+    return '';
   }
 
   let diagram = '```mermaid\ngraph LR\n';
   
   // Build a list of routes based on discovered
+  const routes = [];
   
   // Always include root route
   routes.push({ path: '/', name: 'Root' });
@@ -1890,6 +3267,1078 @@ function generateArchitectureOverview(filesInfo, features) {
   return markdown;
 }
 
+// Generate module interface documentation
+function generateModuleInterfaceDocumentation(moduleInterfaces) {
+  let markdown = '';
+  
+  // Filter to show only modules with interfaces or exports
+  const relevantModules = Object.entries(moduleInterfaces).filter(([_, module]) => {
+    return (
+      module && 
+      ((module.exportedClasses && module.exportedClasses.length > 0) || 
+      (module.exportedFunctions && module.exportedFunctions.length > 0) || 
+      (module.exportedInterfaces && module.exportedInterfaces.length > 0) || 
+      module.defaultExport || 
+      (module.usageExamples && module.usageExamples.length > 0))
+    );
+  });
+  
+  if (relevantModules.length === 0) {
+    return '';
+  }
+  
+  // Generate documentation for each module
+  relevantModules.forEach(([moduleName, module]) => {
+    markdown += `### ${moduleName}\n\n`;
+    
+    // If module is an entry point, mention that first
+    if (module.isEntryPoint) {
+      // Check what kind of entry point
+      const entryTypes = module.usageExamples
+        .filter(ex => ['cli', 'api', 'webService', 'program'].includes(ex.type))
+        .map(ex => ex.type);
+      
+      if (entryTypes.length > 0) {
+        markdown += `**Entry point type**: ${entryTypes.join(', ')}\n\n`;
+      } else {
+        markdown += `**Entry point**: Yes\n\n`;
+      }
+    }
+    
+    // If there's a default export, document it first
+    if (module && module.defaultExport) {
+      markdown += `**Default export**: \`${module.defaultExport.name}\` (${module.defaultExport.type})\n\n`;
+      
+      if (module.defaultExport.type === 'function' && module.defaultExport.signature) {
+        markdown += '```typescript\n';
+        markdown += module.defaultExport.signature;
+        markdown += '\n```\n\n';
+      }
+    }
+    
+    // Exported classes
+    if (module.exportedClasses.length > 0) {
+      markdown += '#### Exported Classes\n\n';
+      
+      module.exportedClasses.forEach(cls => {
+        markdown += `##### \`${cls.name}\`\n\n`;
+        
+        // Show inheritance if available
+        if (cls.extends || (cls.implements && cls.implements.length > 0)) {
+          if (cls.extends) {
+            markdown += `Extends: \`${cls.extends}\``;
+            
+            if (cls.implements && cls.implements.length > 0) {
+              markdown += `, Implements: ${cls.implements.map(i => `\`${i}\``).join(', ')}`;
+            }
+            
+            markdown += '\n\n';
+          } else if (cls.implements && cls.implements.length > 0) {
+            markdown += `Implements: ${cls.implements.map(i => `\`${i}\``).join(', ')}\n\n`;
+          }
+        }
+        
+        // Constructor
+        if (cls.constructorParams && cls.constructorParams.length > 0) {
+          markdown += '**Constructor:**\n\n';
+          markdown += '```typescript\n';
+          markdown += `constructor(${cls.constructorParams.map(p => `${p.name}: ${p.type}`).join(', ')})`;
+          markdown += '\n```\n\n';
+        }
+        
+        // Public methods
+        if (cls.publicMethods && cls.publicMethods.length > 0) {
+          markdown += '**Public Methods:**\n\n';
+          markdown += '| Method | Parameters | Return Type |\n';
+          markdown += '|--------|------------|-------------|\n';
+          
+          cls.publicMethods.forEach(method => {
+            const params = method.parameters ? 
+              method.parameters.map(p => `${p.name}: ${p.type}`).join(', ') : '';
+            markdown += `| \`${method.name}\` | ${params} | ${method.returnType || 'void'} |\n`;
+          });
+          
+          markdown += '\n';
+        }
+        
+        // Usage example
+        if (cls.usageExample) {
+          markdown += '**Usage Example:**\n\n';
+          markdown += '```typescript\n';
+          markdown += cls.usageExample;
+          markdown += '\n```\n\n';
+        }
+      });
+    }
+    
+    // Exported functions
+    if (module.exportedFunctions.length > 0) {
+      markdown += '#### Exported Functions\n\n';
+      
+      markdown += '| Function | Signature | Description |\n';
+      markdown += '|----------|-----------|-------------|\n';
+      
+      module.exportedFunctions.forEach(func => {
+        const description = func.description ? 
+          (func.description.length > 50 ? func.description.substring(0, 47) + '...' : func.description) : 
+          '';
+        
+        markdown += `| \`${func.name}\` | \`${func.signature}\` | ${description} |\n`;
+      });
+      
+      markdown += '\n';
+      
+      // Show detailed function documentation for important functions
+      const importantFunctions = module.exportedFunctions.filter(f => f.description || f.parameters.length > 1);
+      
+      if (importantFunctions.length > 0) {
+        importantFunctions.forEach(func => {
+          markdown += `##### \`${func.name}\`\n\n`;
+          
+          if (func.description) {
+            markdown += `${func.description}\n\n`;
+          }
+          
+          markdown += '```typescript\n';
+          markdown += func.signature;
+          markdown += '\n```\n\n';
+          
+          if (func.parameters && func.parameters.length > 0) {
+            markdown += '**Parameters:**\n\n';
+            
+            func.parameters.forEach(param => {
+              markdown += `- \`${param.name}\`: ${param.type}\n`;
+            });
+            
+            markdown += '\n';
+          }
+          
+          if (func.returnType && func.returnType !== 'void') {
+            markdown += `**Returns:** \`${func.returnType}\`\n\n`;
+          }
+        });
+      }
+    }
+    
+    // Exported interfaces
+    if (module.exportedInterfaces.length > 0) {
+      markdown += '#### Exported Interfaces\n\n';
+      
+      // First, create a summary table
+      markdown += '| Interface | Properties | Methods |\n';
+      markdown += '|-----------|------------|--------|\n';
+      
+      module.exportedInterfaces.forEach(iface => {
+        const propCount = iface.properties ? iface.properties.length : 0;
+        const methodCount = iface.methods ? iface.methods.length : 0;
+        
+        markdown += `| \`${iface.name}\` | ${propCount} | ${methodCount} |\n`;
+      });
+      
+      markdown += '\n';
+      
+      // Then provide more detailed interface definitions
+      module.exportedInterfaces.forEach(iface => {
+        markdown += `##### \`${iface.name}\`\n\n`;
+        
+        if (iface.extends && iface.extends.length > 0) {
+          markdown += `Extends: ${iface.extends.map(ext => `\`${ext}\``).join(', ')}\n\n`;
+        }
+        
+        markdown += '```typescript\n';
+        markdown += iface.signature || `interface ${iface.name} {`;
+        
+        if (!iface.signature) {
+          markdown += '\n';
+          
+          // Add properties
+          if (iface.properties && iface.properties.length > 0) {
+            iface.properties.forEach(prop => {
+              markdown += `  ${prop.name}${prop.optional ? '?' : ''}: ${prop.type};\n`;
+            });
+          }
+          
+          // Add methods
+          if (iface.methods && iface.methods.length > 0) {
+            if (iface.properties && iface.properties.length > 0) {
+              markdown += '\n';
+            }
+            
+            iface.methods.forEach(method => {
+              markdown += `  ${method.signature};\n`;
+            });
+          }
+          
+          markdown += '}';
+        }
+        
+        markdown += '\n```\n\n';
+      });
+    }
+    
+    // Command-line or API usage examples
+    const cliExamples = module.usageExamples.filter(ex => ex.type === 'cli');
+    const apiExamples = module.usageExamples.filter(ex => ['api', 'webService'].includes(ex.type));
+    
+    if (cliExamples.length > 0) {
+      markdown += '#### Command Line Usage\n\n';
+      
+      cliExamples.forEach(ex => {
+        markdown += '```bash\n';
+        markdown += ex.example;
+        markdown += '\n```\n\n';
+      });
+    }
+    
+    if (apiExamples.length > 0) {
+      markdown += '#### API Endpoints\n\n';
+      
+      apiExamples.forEach(ex => {
+        markdown += `**${ex.name}**\n\n`;
+        markdown += '```\n';
+        markdown += ex.example;
+        markdown += '\n```\n\n';
+      });
+    }
+    
+    markdown += '---\n\n';
+  });
+  
+  return markdown;
+}
+
+// Generate documentation about code repository entry points with execution flow
+function generateEntryPointDocumentation(filesInfo, moduleInterfaces) {
+  // Filter to files identified as entry points
+  const entryPoints = filesInfo.filter(file => file.isEntryPoint);
+  
+  if (entryPoints.length === 0) {
+    return '';
+  }
+  
+  let markdown = '';
+  
+  // Access the logical modules to show dependencies
+  const logicalModules = (moduleInterfaces && moduleInterfaces._logicalModules) ? moduleInterfaces._logicalModules : {};
+  
+  // Get all functions from all files for analysis
+  const allFunctions = filesInfo.flatMap(file => file.functions || []);
+  
+  // Group entry points by type
+  const cliEntryPoints = entryPoints.filter(ep => 
+    ep.entryPoints && ep.entryPoints.cli && ep.entryPoints.cli.length > 0
+  );
+  
+  const webServiceEntryPoints = entryPoints.filter(ep => 
+    ep.entryPoints && ep.entryPoints.webService && ep.entryPoints.webService.length > 0
+  );
+  
+  const programEntryPoints = entryPoints.filter(ep => 
+    ep.entryPoints && ep.entryPoints.program && ep.entryPoints.program.length > 0
+  );
+  
+  // CLI entry points 
+  if (cliEntryPoints.length > 0) {
+    markdown += '### Command Line Interfaces\n\n';
+    
+    cliEntryPoints.forEach(ep => {
+      ep.entryPoints.cli.forEach(cli => {
+        markdown += `#### ${cli.name}\n\n`;
+        markdown += '```bash\n';
+        markdown += cli.usage;
+        markdown += '\n```\n\n';
+        
+        // Add commands and options if available
+        if (cli.commands && cli.commands.length > 0) {
+          markdown += '**Available Commands:**\n\n';
+          cli.commands.forEach(cmd => {
+            markdown += `- \`${cmd}\`\n`;
+          });
+          markdown += '\n';
+        }
+        
+        if (cli.options && cli.options.length > 0) {
+          markdown += '**Available Options:**\n\n';
+          cli.options.forEach(opt => {
+            markdown += `- \`${opt}\`\n`;
+          });
+          markdown += '\n';
+        }
+        
+        // Add execution flow showing how CLI commands might be processed
+        markdown += '**Possible Execution Flow:**\n\n';
+        markdown += 'Based on the code analysis, when you run this CLI command, something like this execution flow may occur:\n\n';
+        
+        // Find main functions to determine potential flow
+        const mainFunctions = allFunctions.filter(f => 
+          f.name.toLowerCase() === 'main' || 
+          f.name.toLowerCase().includes('init') ||
+          f.name.startsWith('handle') ||
+          f.name.startsWith('process') ||
+          f.name.toLowerCase().includes('command') ||
+          f.name.toLowerCase().includes('cli')
+        );
+        
+        // If we found some potential flow-related functions
+        if (mainFunctions.length > 0) {
+          // Sort by complexity (parameter count)
+          mainFunctions.sort((a, b) => 
+            (b.parameters ? b.parameters.length : 0) - 
+            (a.parameters ? a.parameters.length : 0)
+          );
+          
+          // Convert to steps
+          mainFunctions.slice(0, 5).forEach((func, idx) => {
+            const stepNum = idx + 1;
+            const desc = func.description ? 
+              func.description.split('.')[0] : // Get first sentence
+              `Executes the ${func.name} function`;
+            
+            markdown += `${stepNum}. **${func.name}**: ${desc}\n`;
+          });
+        } else {
+          // Generic execution flow based on CLI patterns
+          markdown += '1. **Parse Arguments**: Command-line arguments are processed\n';
+          markdown += '2. **Validate Input**: Ensure required parameters are provided\n';
+          markdown += '3. **Setup Environment**: Configure environment based on options\n';
+          markdown += '4. **Execute Command**: Run the requested operation\n';
+          markdown += '5. **Output Results**: Return results to the user\n';
+        }
+        
+        markdown += '\n';
+        
+        // Include a diagram showing the likely flow based on discovered functions
+        markdown += '```mermaid\nflowchart TD\n';
+        
+        // Start with CLI entrypoint
+        markdown += '  CLI[CLI Entry Point] --> Parser[Parse Arguments]\n';
+        
+        // Add all significant functions as nodes in the flowchart
+        const flowFunctions = mainFunctions.slice(0, 7); // Limit to 7 for readability
+        
+        if (flowFunctions.length > 0) {
+          let prevNode = 'Parser';
+          
+          flowFunctions.forEach((func, idx) => {
+            const nodeId = func.name.replace(/[^a-zA-Z0-9]/g, '');
+            const nodeName = func.name;
+            
+            // Create the node
+            markdown += `  ${nodeId}[${nodeName}]\n`;
+            
+            // Connect from previous node
+            markdown += `  ${prevNode} --> ${nodeId}\n`;
+            
+            prevNode = nodeId;
+            
+            // Add branches for complex functions
+            if (func.parameters && func.parameters.length > 1) {
+              const branchId = `${nodeId}Branch`;
+              markdown += `  ${nodeId} --> ${branchId}{Process Options}\n`;
+              
+              // Create some reasonable branches based on parameters
+              const param = func.parameters[0];
+              if (param) {
+                markdown += `  ${branchId} -->|${param.name}| ${nodeId}Result[Result]\n`;
+              }
+              
+              prevNode = `${nodeId}Result`;
+            }
+          });
+          
+          // Final output
+          markdown += `  ${prevNode} --> Output[Return Results]\n`;
+        } else {
+          // Generic flow if no specific functions found
+          markdown += '  Parser --> Validate[Validate Input]\n';
+          markdown += '  Validate --> Execute[Execute Command]\n';
+          markdown += '  Execute --> Output[Return Results]\n';
+        }
+        
+        // Style the diagram
+        markdown += '\n';
+        markdown += '  style CLI fill:#f96,stroke:#333,stroke-width:2px\n';
+        markdown += '  style Parser fill:#9cf,stroke:#333,stroke-width:1px\n';
+        markdown += '  style Output fill:#c9f,stroke:#333,stroke-width:1px\n';
+        
+        // Add styles for discovered functions
+        flowFunctions.forEach(func => {
+          const nodeId = func.name.replace(/[^a-zA-Z0-9]/g, '');
+          markdown += `  style ${nodeId} fill:#9c6,stroke:#333,stroke-width:1px\n`;
+          
+          if (func.parameters && func.parameters.length > 1) {
+            markdown += `  style ${nodeId}Branch fill:#fc9,stroke:#333,stroke-width:1px\n`;
+            markdown += `  style ${nodeId}Result fill:#c9c,stroke:#333,stroke-width:1px\n`;
+          }
+        });
+        
+        markdown += '```\n\n';
+        
+        // Find most significant functions to include in a key functions table
+        const significantFuncs = [];
+        
+        // Add functions that seem most important based on name patterns
+        allFunctions.forEach(func => {
+          // Main/entry point functions
+          if (func.name.toLowerCase() === 'main' || 
+              func.name.toLowerCase().includes('init') ||
+              func.name.startsWith('start') ||
+              func.name.startsWith('run')) {
+            significantFuncs.push({
+              category: 'Entry Point',
+              function: func,
+              purpose: func.description || 'Program entry point'
+            });
+          }
+          
+          // Command/CLI functions
+          else if (func.name.toLowerCase().includes('command') ||
+                  func.name.toLowerCase().includes('cli') ||
+                  func.name.toLowerCase().includes('parse')) {
+            significantFuncs.push({
+              category: 'Command Processing',
+              function: func,
+              purpose: func.description || 'Processes command input'
+            });
+          }
+          
+          // Core business logic
+          else if (func.name.toLowerCase().includes('process') ||
+                  func.name.toLowerCase().includes('execute') ||
+                  func.name.toLowerCase().includes('handle')) {
+            significantFuncs.push({
+              category: 'Core Logic',
+              function: func,
+              purpose: func.description || 'Executes business logic'
+            });
+          }
+          
+          // Data/file processing
+          else if (func.name.toLowerCase().includes('file') ||
+                  func.name.toLowerCase().includes('read') ||
+                  func.name.toLowerCase().includes('write') ||
+                  func.name.toLowerCase().includes('load')) {
+            significantFuncs.push({
+              category: 'Data Processing',
+              function: func,
+              purpose: func.description || 'Handles data operations'
+            });
+          }
+          
+          // Export/output functions
+          else if (func.name.toLowerCase().includes('export') ||
+                  func.name.toLowerCase().includes('output') ||
+                  func.name.toLowerCase().includes('generate') ||
+                  func.name.toLowerCase().includes('print')) {
+            significantFuncs.push({
+              category: 'Output Generation',
+              function: func,
+              purpose: func.description || 'Produces output'
+            });
+          }
+        });
+        
+        // Include key functions table if we found anything significant
+        if (significantFuncs.length > 0) {
+          markdown += '**Key Functions Involved:**\n\n';
+          markdown += '| Category | Function | Purpose |\n';
+          markdown += '|----------|----------|--------|\n';
+          
+          // Sort by category and limit to reasonable number
+          significantFuncs
+            .sort((a, b) => a.category.localeCompare(b.category))
+            .slice(0, 10)
+            .forEach(item => {
+              const funcName = item.function.name;
+              const shortPurpose = item.purpose.length > 50 ? 
+                item.purpose.substring(0, 47) + '...' : 
+                item.purpose;
+              
+              markdown += `| ${item.category} | \`${funcName}()\` | ${shortPurpose} |\n`;
+            });
+          
+          markdown += '\n';
+        }
+      });
+    });
+  }
+  
+  // Web service / API entry points
+  if (webServiceEntryPoints.length > 0) {
+    markdown += '### API Endpoints\n\n';
+    
+    webServiceEntryPoints.forEach(ep => {
+      ep.entryPoints.webService.forEach(service => {
+        markdown += `#### ${service.name}\n\n`;
+        markdown += `Base URL: \`${service.url}\`\n\n`;
+        
+        if (service.routes && service.routes.length > 0) {
+          markdown += '| Method | Endpoint | Description |\n';
+          markdown += '|--------|----------|-------------|\n';
+          
+          service.routes.forEach(route => {
+            markdown += `| ${route.method} | \`${route.path}\` | - |\n`;
+          });
+          
+          markdown += '\n';
+          
+          // Add request flow diagram for API requests
+          markdown += '**API Request Flow:**\n\n';
+          
+          markdown += '```mermaid\nsequenceDiagram\n';
+          markdown += '    participant Client\n';
+          markdown += '    participant API as API Server\n';
+          markdown += '    participant Handler as Request Handler\n';
+          markdown += '    participant Service as Service Layer\n';
+          markdown += '    participant Data as Data Access Layer\n';
+          markdown += '\n';
+          markdown += '    Client->>API: HTTP Request\n';
+          markdown += '    API->>Handler: Route to appropriate handler\n';
+          markdown += '    Handler->>Service: Process business logic\n';
+          markdown += '    Service->>Data: Query/Update data\n';
+          markdown += '    Data-->>Service: Return data\n';
+          markdown += '    Service-->>Handler: Return result\n';
+          markdown += '    Handler-->>API: Format response\n';
+          markdown += '    API-->>Client: HTTP Response\n';
+          markdown += '```\n\n';
+        } else {
+          markdown += 'Specific API routes not detected.\n\n';
+        }
+      });
+    });
+  }
+  
+  // Main program entry points
+  if (programEntryPoints.length > 0) {
+    markdown += '### Main Program Entry Points\n\n';
+    
+    programEntryPoints.forEach(ep => {
+      ep.entryPoints.program.forEach(program => {
+        markdown += `- \`${program.name}\` (${program.path})\n`;
+      });
+    });
+    
+    markdown += '\n';
+  }
+  
+  return markdown;
+}
+
+// Identify and document key repository elements
+function generateKeyElementsDocumentation(filesInfo, features, moduleInterfaces) {
+  let markdown = '';
+  
+  // Find files with significant importance
+  const entryPointFiles = filesInfo.filter(f => f.isEntryPoint);
+  
+  // Find core classes (classes with most methods or important names)
+  const allClasses = filesInfo.flatMap(f => f.classes)
+    .filter(cls => cls.methods && cls.methods.length > 0)
+    .sort((a, b) => b.methods.length - a.methods.length);
+  
+  // Find core interfaces
+  const allInterfaces = filesInfo.flatMap(f => f.interfaces)
+    .filter(iface => iface.properties && iface.properties.length > 0)
+    .sort((a, b) => b.properties.length - a.properties.length);
+  
+  // Find core utility functions  
+  const allFunctions = filesInfo.flatMap(f => f.functions || [])
+    .filter(func => func.isExported)
+    .sort((a, b) => (b.parameters ? b.parameters.length : 0) - (a.parameters ? a.parameters.length : 0));
+  
+  if (allClasses.length === 0 && allInterfaces.length === 0 && allFunctions.length === 0) {
+    return '';
+  }
+  
+  markdown += '## Key Repository Elements\n\n';
+  markdown += 'This section highlights the most important elements in the repository based on code analysis.\n\n';
+  
+  // Key classes
+  if (allClasses.length > 0) {
+    markdown += '### Core Classes\n\n';
+    markdown += '| Class | Methods | Properties | Description |\n';
+    markdown += '|-------|---------|------------|-------------|\n';
+    
+    // Show top classes by number of methods (max 10)
+    const topClasses = allClasses.slice(0, 10);
+    
+    topClasses.forEach(cls => {
+      const methodCount = cls.methods ? cls.methods.length : 0;
+      const propCount = cls.properties ? cls.properties.length : 0;
+      
+      // Try to generate a brief description based on class name and inheritance
+      let description = '';
+      if (cls.extends) {
+        description = `Extends ${cls.extends}`;
+      } else if (cls.implements && cls.implements.length > 0) {
+        description = `Implements ${cls.implements.join(', ')}`;
+      } else {
+        // Try to infer from name
+        if (cls.name.includes('Service')) {
+          description = 'Service component';
+        } else if (cls.name.includes('Controller')) {
+          description = 'Controller component';
+        } else if (cls.name.includes('Component')) {
+          description = 'UI component';
+        } else if (cls.name.includes('Model')) {
+          description = 'Data model';
+        } else if (cls.name.includes('Repository')) {
+          description = 'Data access layer';
+        } else {
+          description = ''; 
+        }
+      }
+      
+      markdown += `| \`${cls.name}\` | ${methodCount} | ${propCount} | ${description} |\n`;
+    });
+    
+    markdown += '\n';
+  }
+  
+  // Key interfaces
+  if (allInterfaces.length > 0) {
+    markdown += '### Core Interfaces\n\n';
+    markdown += '| Interface | Properties | Methods | Description |\n';
+    markdown += '|-----------|------------|---------|-------------|\n';
+    
+    // Show top interfaces by property count (max 8)
+    const topInterfaces = allInterfaces.slice(0, 8);
+    
+    topInterfaces.forEach(iface => {
+      const propCount = iface.properties ? iface.properties.length : 0;
+      const methodCount = iface.methods ? iface.methods.length : 0;
+      
+      // Try to generate a brief description based on interface name and extension
+      let description = '';
+      if (iface.extends && iface.extends.length > 0) {
+        description = `Extends ${iface.extends.join(', ')}`;
+      } else {
+        // Try to infer from name
+        if (iface.name.includes('Config')) {
+          description = 'Configuration interface';
+        } else if (iface.name.includes('Props')) {
+          description = 'Component props';
+        } else if (iface.name.includes('State')) {
+          description = 'State definition';
+        } else if (iface.name.includes('Options')) {
+          description = 'Options configuration';
+        } else if (iface.name.includes('Response')) {
+          description = 'API response type';
+        } else if (iface.name.includes('Request')) {
+          description = 'API request type';
+        } else {
+          description = 'Data structure';
+        }
+      }
+      
+      markdown += `| \`${iface.name}\` | ${propCount} | ${methodCount} | ${description} |\n`;
+    });
+    
+    markdown += '\n';
+  }
+  
+  // Key utility functions
+  if (allFunctions.length > 0) {
+    markdown += '### Core Utility Functions\n\n';
+    markdown += '| Function | Parameters | Return Type | Description |\n';
+    markdown += '|----------|------------|-------------|-------------|\n';
+    
+    // Show top functions by parameter count and description (max 8)
+    const topFunctions = allFunctions
+      .filter(f => !f.name.startsWith('_') && !f.isAnonymous)
+      .slice(0, 8);
+    
+    topFunctions.forEach(func => {
+      const paramCount = func.parameters ? func.parameters.length : 0;
+      const returnType = func.returnType || 'void';
+      const description = func.description ? 
+        (func.description.length > 40 ? func.description.substring(0, 37) + '...' : func.description) : 
+        '';
+      
+      markdown += `| \`${func.name}\` | ${paramCount} | ${returnType} | ${description} |\n`;
+    });
+    
+    markdown += '\n';
+  }
+  
+  return markdown;
+}
+
+// Generate call hierarchy diagrams to visualize function relationships
+function generateCallHierarchyDiagrams(moduleInterfaces, filesInfo) {
+  if (!filesInfo || filesInfo.length === 0) {
+    return '';
+  }
+  
+  let markdown = '';
+  
+  // Find significant functions across the codebase
+  const allFunctions = filesInfo.flatMap(file => file.functions || []);
+  
+  if (allFunctions.length === 0) {
+    return '';
+  }
+  
+  // Find potential entry points (main functions, exported functions with no parameters)
+  const entryPointFunctions = allFunctions.filter(func => 
+    func.name.toLowerCase() === 'main' || 
+    func.name.toLowerCase().includes('init') ||
+    (func.isExported && (!func.parameters || func.parameters.length === 0))
+  );
+  
+  // If no clear entry points, use the most complex functions
+  const significantFunctions = entryPointFunctions.length > 0 ? 
+    entryPointFunctions : 
+    allFunctions
+      .filter(f => f.parameters && f.parameters.length > 0)
+      .sort((a, b) => (b.parameters ? b.parameters.length : 0) - (a.parameters ? a.parameters.length : 0))
+      .slice(0, 3);
+  
+  // Create a more sophisticated call graph based on code analysis
+  const callGraph = {};
+  
+  // First pass: create basic function entries
+  allFunctions.forEach(func => {
+    callGraph[func.name] = {
+      calls: [],
+      calledBy: [],
+      description: func.description || '',
+      parameters: func.parameters || [],
+      isAsync: func.isAsync || false,
+      returnType: func.returnType || 'void',
+      sourceFile: func.sourceFile || '',
+      importance: 0  // We'll calculate this
+    };
+  });
+  
+  // Second pass: analyze function bodies (via descriptions/signatures) for calls
+  allFunctions.forEach(func => {
+    // Get function text from description and signature
+    let funcText = (func.description || '') + ' ' + (func.signature || '');
+    
+    // Look for function calls in the text
+    allFunctions.forEach(potentialCallee => {
+      // Skip self-calls
+      if (potentialCallee.name === func.name) return;
+      
+      // More robust function call detection
+      const callPattern = new RegExp(`\\b${potentialCallee.name}\\s*\\(`, 'i');
+      const simplePattern = new RegExp(`\\b${potentialCallee.name}\\b`, 'i');
+      
+      // If we find a clear function call or the function name is mentioned
+      if (callPattern.test(funcText) || 
+         (simplePattern.test(funcText) && potentialCallee.name.length > 3)) { // Avoid short names like "add"
+        callGraph[func.name].calls.push(potentialCallee.name);
+        
+        // Record the inverse relationship too
+        if (callGraph[potentialCallee.name]) {
+          callGraph[potentialCallee.name].calledBy.push(func.name);
+        }
+      }
+    });
+  });
+  
+  // Calculate function importance based on:
+  // 1. How many places call this function
+  // 2. How many parameters it has
+  // 3. Whether it's exported
+  allFunctions.forEach(func => {
+    if (callGraph[func.name]) {
+      const callCount = callGraph[func.name].calledBy.length;
+      const paramCount = func.parameters ? func.parameters.length : 0;
+      const isExported = func.isExported ? 5 : 0;
+      const namePriority = func.name.toLowerCase() === 'main' ? 10 : 0;
+      
+      callGraph[func.name].importance = callCount * 2 + paramCount + isExported + namePriority;
+    }
+  });
+  
+  // Find the most important functions to display
+  // First sort by importance
+  const importantFunctions = Object.entries(callGraph)
+    .map(([name, info]) => ({
+      name,
+      ...info
+    }))
+    .sort((a, b) => b.importance - a.importance)
+    .slice(0, 10); // Limit to top 10 for readability
+  
+  // Generate the call hierarchy for most important function
+  if (importantFunctions.length > 0) {
+    const mainFunction = importantFunctions[0];
+    
+    markdown += `### Primary Call Flow: ${mainFunction.name}()\n\n`;
+    markdown += 'This diagram shows the key function call relationships for the most important function in the codebase:\n\n';
+    markdown += '```mermaid\nsequenceDiagram\n';
+    
+    // Build a tree of function calls up to a certain depth
+    const usedFunctions = new Set([mainFunction.name]);
+    
+    // Add the main function as participant
+    markdown += `  participant Main as ${mainFunction.name}()\n`;
+    
+    // DFS to add important called functions - more selective approach
+    function traverseCalls(funcName, depth = 0, maxDepth = 3, maxBranches = 4) {
+      if (depth >= maxDepth || !callGraph[funcName]) return;
+      
+      // Sort calls by importance and take only the most important ones
+      const calls = callGraph[funcName].calls
+        .filter(calledName => callGraph[calledName]) // Ensure the called function exists
+        .sort((a, b) => callGraph[b].importance - callGraph[a].importance) // Sort by importance
+        .slice(0, maxBranches); // Limit branching factor
+      
+      calls.forEach(calledFunc => {
+        if (!usedFunctions.has(calledFunc)) {
+          usedFunctions.add(calledFunc);
+          
+          // Add as participant
+          const participantId = calledFunc.replace(/[^a-zA-Z0-9]/g, '');
+          markdown += `  participant ${participantId} as ${calledFunc}()\n`;
+          
+          // Recursively add important functions called by this one
+          traverseCalls(calledFunc, depth + 1, maxDepth, Math.max(2, maxBranches - 1));
+        }
+      });
+    }
+    
+    // Start the traversal
+    traverseCalls(mainFunction.name, 0, 3, 5);
+    
+    // Add sequence of calls
+    markdown += '\n';
+    
+    // Generate realistic call sequences based on the identified function relationships
+    function generateCallSequence(funcName, depth = 0, maxDepth = 3, indent = '', processedCalls = new Set()) {
+      if (depth >= maxDepth || !callGraph[funcName] || processedCalls.has(funcName)) return;
+      
+      // Mark this function as processed to prevent cycles
+      processedCalls.add(funcName);
+      
+      // Get calls that we've already added as participants
+      const calls = callGraph[funcName].calls
+        .filter(f => usedFunctions.has(f))
+        .sort((a, b) => callGraph[b].importance - callGraph[a].importance)
+        .slice(0, depth === 0 ? 5 : 3); // More calls at top level, fewer at deeper levels
+      
+      // If we have no calls, create a dummy note mentioning internal processing
+      if (calls.length === 0 && depth === 0) {
+        markdown += `${indent}Note over Main: Internal processing\n`;
+        return;
+      }
+      
+      calls.forEach((calledFunc, idx) => {
+        if (callGraph[calledFunc]) {
+          const sourceId = depth === 0 ? 'Main' : funcName.replace(/[^a-zA-Z0-9]/g, '');
+          const targetId = calledFunc.replace(/[^a-zA-Z0-9]/g, '');
+          
+          // Get parameters to show in call
+          const params = callGraph[calledFunc].parameters;
+          
+          // If this is an important function with params, show them
+          let paramText;
+          if (callGraph[calledFunc].importance > 5 && params && params.length > 0) {
+            paramText = `(${params.map(p => p.name).join(', ')})`;
+          } else if (params && params.length > 0) {
+            paramText = `(${params.length} params)`;
+          } else {
+            paramText = '()';
+          }
+          
+          // Add call with description if available
+          if (callGraph[calledFunc].description && callGraph[calledFunc].importance > 5) {
+            const shortDesc = callGraph[calledFunc].description.split('.')[0];
+            if (shortDesc && shortDesc.length < 40) {
+              markdown += `${indent}Note right of ${targetId}: ${shortDesc}\n`;
+            }
+          }
+          
+          // Add call
+          markdown += `${indent}${sourceId}->>+${targetId}: ${calledFunc}${paramText}\n`;
+          
+          // For async functions, add note
+          if (callGraph[calledFunc].isAsync) {
+            markdown += `${indent}Note over ${targetId}: async\n`;
+          }
+          
+          // Recursively add nested calls with proper indentation - only for important functions
+          if (callGraph[calledFunc].importance > 3) {
+            generateCallSequence(calledFunc, depth + 1, maxDepth, indent + '  ', new Set(processedCalls));
+          }
+          
+          // Add return
+          let returnDesc = callGraph[calledFunc].returnType;
+          if (returnDesc === 'void' || !returnDesc) {
+            returnDesc = depth === 0 ? 'Returns results' : 'Complete';
+          }
+          markdown += `${indent}${targetId}-->>-${sourceId}: ${returnDesc}\n`;
+        }
+      });
+    }
+    
+    // Start sequence generation
+    generateCallSequence(mainFunction.name);
+    
+    markdown += '```\n\n';
+  }
+  
+  // Show functions that are frequently called by others (hub functions)
+  // Different perspective: find functions that are called by many others
+  if (importantFunctions.length > 1) {
+    const mainFunctionName = importantFunctions[0].name;
+    
+    // Find a function that's called by many others but isn't the main function
+    const hubFunctions = importantFunctions
+      .filter(f => f.calledBy.length > 1 && f.name !== mainFunctionName)
+      .sort((a, b) => b.calledBy.length - a.calledBy.length);
+    
+    // If we found a good hub function, show its call flow
+    if (hubFunctions.length > 0) {
+      const hubFunction = hubFunctions[0];
+      
+      markdown += `### Secondary Flow: ${hubFunction.name}() - Called by ${hubFunction.calledBy.length} Functions\n\n`;
+      markdown += 'This diagram shows a different perspective - a core function that is called by many other parts of the codebase:\n\n';
+      markdown += '```mermaid\nsequenceDiagram\n';
+      
+      // Show the callers of this function
+      const usedCallers = new Set();
+      
+      // First add the hub as participant
+      markdown += `  participant Hub as ${hubFunction.name}()\n`;
+      
+      // Sort callers by importance and add up to 5
+      const callers = hubFunction.calledBy
+        .filter(caller => callGraph[caller])
+        .sort((a, b) => callGraph[b].importance - callGraph[a].importance)
+        .slice(0, 5);
+      
+      // Add caller participants
+      callers.forEach(caller => {
+        usedCallers.add(caller);
+        const callerId = caller.replace(/[^a-zA-Z0-9]/g, '');
+        markdown += `  participant ${callerId} as ${caller}()\n`;
+      });
+      
+      // Add hub's calls to other functions too
+      const targetFunctions = hubFunction.calls
+        .filter(call => callGraph[call] && !usedCallers.has(call) && call !== hubFunction.name)
+        .sort((a, b) => callGraph[b].importance - callGraph[a].importance)
+        .slice(0, 3);
+      
+      // Add targets as participants
+      targetFunctions.forEach(target => {
+        const targetId = target.replace(/[^a-zA-Z0-9]/g, '');
+        markdown += `  participant ${targetId} as ${target}()\n`;
+      });
+      
+      markdown += '\n';
+      
+      // Add sequence calls to hub function
+      callers.forEach(caller => {
+        const callerId = caller.replace(/[^a-zA-Z0-9]/g, '');
+        
+        // Get parameters to show in call
+        let paramText = '()';
+        if (hubFunction.parameters && hubFunction.parameters.length > 0) {
+          paramText = `(${hubFunction.parameters.map(p => p.name).join(', ')})`;
+        }
+        
+        // Add call
+        markdown += `  ${callerId}->>Hub: ${hubFunction.name}${paramText}\n`;
+      });
+      
+      // Show hub function calling other functions
+      targetFunctions.forEach(target => {
+        const targetId = target.replace(/[^a-zA-Z0-9]/g, '');
+        
+        // Get parameters
+        const params = callGraph[target].parameters;
+        const paramText = params && params.length > 0 ? 
+          `(${params.map(p => p.name).join(', ')})` : '()';
+        
+        // Add call
+        markdown += `  Hub->>+${targetId}: ${target}${paramText}\n`;
+        
+        // Add return
+        const returnType = callGraph[target].returnType || 'result';
+        markdown += `  ${targetId}-->>-Hub: ${returnType}\n`;
+      });
+      
+      // Add returns to callers
+      callers.forEach(caller => {
+        const callerId = caller.replace(/[^a-zA-Z0-9]/g, '');
+        const returnType = hubFunction.returnType || 'result';
+        markdown += `  Hub-->>+${callerId}: ${returnType}\n`;
+      });
+    } 
+    // Otherwise, just show another important function
+    else {
+      const secondFunction = importantFunctions[1];
+      
+      markdown += `### Secondary Flow: ${secondFunction.name}()\n\n`;
+      markdown += 'This diagram shows another important function call flow in the codebase:\n\n';
+      markdown += '```mermaid\nsequenceDiagram\n';
+      
+      // Similar approach but for the second function
+      const usedFunctions = new Set([secondFunction.name]);
+      
+      // Add the main function as participant
+      markdown += `  participant Main as ${secondFunction.name}()\n`;
+      
+      // Find directly called functions, sorted by importance
+      const directCalls = callGraph[secondFunction.name] ? 
+        callGraph[secondFunction.name].calls
+          .filter(call => callGraph[call])
+          .sort((a, b) => callGraph[b].importance - callGraph[a].importance)
+          .slice(0, 5) : [];
+      
+      directCalls.forEach(calledFunc => {
+        if (callGraph[calledFunc]) {
+          usedFunctions.add(calledFunc);
+          const funcId = calledFunc.replace(/[^a-zA-Z0-9]/g, '');
+          markdown += `  participant ${funcId} as ${calledFunc}()\n`;
+        }
+      });
+      
+      markdown += '\n';
+      
+      // Add sequence of calls with more information
+      directCalls.forEach(calledFunc => {
+        if (callGraph[calledFunc]) {
+          const targetId = calledFunc.replace(/[^a-zA-Z0-9]/g, '');
+          
+          // Get parameters to show in call
+          const params = callGraph[calledFunc].parameters;
+          let paramText;
+          if (params && params.length > 0) {
+            paramText = `(${params.map(p => p.name).join(', ')})`;
+          } else {
+            paramText = '()';
+          }
+          
+          // Add call with description if available
+          if (callGraph[calledFunc].description) {
+            const shortDesc = callGraph[calledFunc].description.split('.')[0];
+            if (shortDesc && shortDesc.length < 40) {
+              markdown += `  Note right of ${targetId}: ${shortDesc}\n`;
+            }
+          }
+          
+          // Add call
+          markdown += `  Main->>+${targetId}: ${calledFunc}${paramText}\n`;
+          
+          // Add return
+          const returnType = callGraph[calledFunc].returnType || 'result';
+          markdown += `  ${targetId}-->>-Main: ${returnType}\n`;
+        }
+      });
+    }
+    
+    markdown += '```\n\n';
+  }
+  
+  return markdown;
+}
+
 // Main function
 async function main() {
   try {
@@ -1931,6 +4380,9 @@ async function main() {
     console.log('Building dependency graph...');
     const graph = buildDependencyGraph(filesInfo, detectedLanguage);
     
+    console.log('Detecting module interfaces...');
+    const moduleInterfaces = detectModuleInterfaces(filesInfo);
+    
     console.log('Organizing by feature...');
     const features = organizeByFeature(filesInfo);
     
@@ -1938,7 +4390,39 @@ async function main() {
     
     // Build the markdown output
     let markdown = `# Repository Map (${detectedLanguage.charAt(0).toUpperCase() + detectedLanguage.slice(1)})\n\n`;
-    markdown += `This repository map provides a comprehensive overview of the ${detectedLanguage} codebase structure, including component trees, class hierarchies, public interfaces, and dependency relationships.\n\n`;
+    markdown += `This repository map provides a comprehensive overview of the ${detectedLanguage} codebase structure, including component trees, class hierarchies, interfaces, function signatures, and dependency relationships.\n\n`;
+    
+    // Table of Contents
+    markdown += '## Table of Contents\n\n';
+    markdown += '1. [Architecture Overview](#architecture-overview)\n';
+    markdown += '2. [Module Structure](#module-structure)\n';
+    markdown += '3. [Key Repository Elements](#key-repository-elements)\n';
+    markdown += '4. [Entry Points](#entry-points)\n';
+    markdown += '5. [Call Hierarchy](#call-hierarchy)\n';
+    
+    if (Object.keys(moduleInterfaces).some(m => 
+      moduleInterfaces[m] && 
+      ((moduleInterfaces[m].exportedClasses && moduleInterfaces[m].exportedClasses.length > 0) || 
+       (moduleInterfaces[m].exportedFunctions && moduleInterfaces[m].exportedFunctions.length > 0)))) {
+      markdown += '6. [Module Interfaces](#module-interfaces)\n';
+    }
+    
+    markdown += '7. [Function Index](#function-index)\n';
+    
+    if (filesInfo.some(f => f.isComponent)) {
+      markdown += '8. [Component Tree](#component-tree)\n';
+    }
+    
+    if (filesInfo.some(f => f.isService)) {
+      markdown += '9. [Service Architecture](#service-architecture)\n';
+    }
+    
+    if (filesInfo.some(f => f.isController)) {
+      markdown += '10. [API & Route Structure](#api--route-structure)\n';
+    }
+    
+    markdown += '11. [Code Organization by Feature](#code-organization-by-feature)\n';
+    markdown += '\n';
     
     // Architecture Overview
     markdown += '## Architecture Overview\n\n';
@@ -1946,7 +4430,288 @@ async function main() {
     // Use our dynamic architecture overview generator
     markdown += generateArchitectureOverview(filesInfo, features, detectedLanguage);
     
-    // Component Tree
+    // Generate Module Structure diagram
+    markdown += '## Module Structure\n\n';
+    markdown += 'The repository is organized into the following logical modules:\n\n';
+    
+    // Generate module structure diagram dynamically based on code analysis
+    const moduleStructure = {};
+    
+    // Analyze functions to identify modules and relationships
+    if (filesInfo && filesInfo.length > 0) {
+      // Gather all functions for analysis
+      const allFunctions = filesInfo.flatMap(file => file.functions || []);
+      
+      // Group functions into modules based on names and relationships
+      const functionGroups = {
+        'Entry Point': allFunctions.filter(f => 
+          f.name.toLowerCase() === 'main' || 
+          f.name.toLowerCase().includes('init') ||
+          f.name.toLowerCase().includes('start') ||
+          f.name.toLowerCase().includes('boot')
+        ),
+        'CLI Handling': allFunctions.filter(f => 
+          f.name.toLowerCase().includes('command') || 
+          f.name.toLowerCase().includes('cli') ||
+          f.name.toLowerCase().includes('arg') ||
+          f.name.toLowerCase().includes('option')
+        ),
+        'Language Processing': allFunctions.filter(f => 
+          f.name.toLowerCase().includes('language') || 
+          f.name.toLowerCase().includes('detect') ||
+          f.name.toLowerCase().includes('parser')
+        ),
+        'File Operations': allFunctions.filter(f => 
+          f.name.toLowerCase().includes('file') || 
+          f.name.toLowerCase().includes('read') ||
+          f.name.toLowerCase().includes('write') ||
+          f.name.toLowerCase().includes('path')
+        ),
+        'Code Analysis': allFunctions.filter(f => 
+          f.name.toLowerCase().includes('extract') || 
+          f.name.toLowerCase().includes('analyze') ||
+          f.name.toLowerCase().includes('parse') ||
+          f.name.toLowerCase().includes('process')
+        ),
+        'Dependency Analysis': allFunctions.filter(f => 
+          f.name.toLowerCase().includes('depend') || 
+          f.name.toLowerCase().includes('graph') ||
+          f.name.toLowerCase().includes('relation')
+        ),
+        'Documentation Generation': allFunctions.filter(f => 
+          f.name.toLowerCase().includes('generate') || 
+          f.name.toLowerCase().includes('doc') ||
+          f.name.toLowerCase().includes('markdown') ||
+          f.name.toLowerCase().includes('diagram')
+        )
+      };
+      
+      // Only include modules that actually have functions
+      Object.entries(functionGroups).forEach(([name, funcs]) => {
+        if (funcs.length > 0) {
+          moduleStructure[name] = {
+            functions: funcs,
+            dependencies: [],
+            description: `Contains ${funcs.length} related functions`
+          };
+        }
+      });
+      
+      // Detect function dependencies between modules by analyzing function content
+      Object.entries(moduleStructure).forEach(([moduleName, module]) => {
+        Object.entries(moduleStructure).forEach(([targetModule, targetInfo]) => {
+          if (moduleName !== targetModule) {
+            // Check if functions in this module call functions in the target module
+            const calls = module.functions.some(func => {
+              // Check if func's description or signature mentions target module functions
+              const funcText = (func.description || '') + ' ' + (func.signature || '');
+              return targetInfo.functions.some(targetFunc => 
+                funcText.includes(targetFunc.name)
+              );
+            });
+            
+            if (calls) {
+              module.dependencies.push(targetModule);
+            }
+          }
+        });
+      });
+      
+      // Add a fallback "Utilities" module for any functions not yet categorized
+      const categorizedFuncs = Object.values(moduleStructure)
+        .flatMap(m => m.functions.map(f => f.name));
+      
+      const uncategorizedFuncs = allFunctions.filter(f => 
+        !categorizedFuncs.includes(f.name)
+      );
+      
+      if (uncategorizedFuncs.length > 0) {
+        moduleStructure['Utilities'] = {
+          functions: uncategorizedFuncs,
+          dependencies: [],
+          description: `Contains ${uncategorizedFuncs.length} utility functions`
+        };
+      }
+    }
+    
+    // If we have identified modules, create the diagram
+    if (Object.keys(moduleStructure).length > 0) {
+      markdown += '```mermaid\ngraph TD\n';
+      
+      // Add nodes for each module
+      Object.entries(moduleStructure).forEach(([moduleName, module]) => {
+        const nodeId = moduleName.replace(/\s+/g, '');
+        const safeName = moduleName.replace(/'/g, '');
+        const functionCount = module.functions.length;
+        markdown += `  ${nodeId}["${safeName} (${functionCount} functions)"]\n`;
+      });
+      
+      // Add edges for dependencies
+      Object.entries(moduleStructure).forEach(([moduleName, module]) => {
+        const sourceId = moduleName.replace(/\s+/g, '');
+        
+        if (module.dependencies && module.dependencies.length > 0) {
+          module.dependencies.forEach(dep => {
+            const targetId = dep.replace(/\s+/g, '');
+            markdown += `  ${sourceId} --> ${targetId}\n`;
+          });
+        }
+      });
+      
+      // Add styling
+      const colors = {
+        'Entry Point': '#f96',
+        'CLI Handling': '#f99',
+        'Language Processing': '#9cf',
+        'File Operations': '#9c6',
+        'Code Analysis': '#fc9',
+        'Dependency Analysis': '#c9c',
+        'Documentation Generation': '#c9f',
+        'Utilities': '#ccc'
+      };
+      
+      Object.entries(moduleStructure).forEach(([moduleName, module]) => {
+        const nodeId = moduleName.replace(/\s+/g, '');
+        const color = colors[moduleName] || '#ddd';
+        markdown += `  style ${nodeId} fill:${color},stroke:#333,stroke-width:1px,color:white\n`;
+      });
+      
+      markdown += '```\n\n';
+      
+      // Add module descriptions
+      markdown += '### Core Modules\n\n';
+      
+      Object.entries(moduleStructure).forEach(([moduleName, module]) => {
+        markdown += `#### ${moduleName}\n\n`;
+        markdown += `${module.description}.\n\n`;
+        
+        // List key functions in this module
+        if (module.functions.length > 0) {
+          markdown += '**Key Functions:**\n\n';
+          
+          // Sort functions by complexity (parameter count) to show most important ones first
+          const sortedFunctions = [...module.functions]
+            .sort((a, b) => (b.parameters ? b.parameters.length : 0) - (a.parameters ? a.parameters.length : 0))
+            .slice(0, Math.min(5, module.functions.length));
+          
+          sortedFunctions.forEach(func => {
+            const description = func.description ? 
+              (func.description.length > 70 ? func.description.substring(0, 67) + '...' : func.description) : 
+              `${func.name} function`;
+            
+            markdown += `- \`${func.name}()\`: ${description}\n`;
+          });
+          
+          if (module.functions.length > 5) {
+            markdown += `- ...and ${module.functions.length - 5} more functions\n`;
+          }
+          
+          markdown += '\n';
+        }
+      });
+    } else {
+      // Fall back to basic structure if dynamic analysis failed
+      const moduleDescriptions = {
+        'Entry Point': 'Handles command-line arguments and contains the main program flow',
+        'Language Detection': 'Detects repository language and loads the appropriate parser',
+        'File Processing': 'Finds and reads files to be analyzed',
+        'Code Analysis': 'Extracts classes, interfaces, functions, and other code elements',
+        'Dependency Analysis': 'Builds dependency graphs between code elements',
+        'Documentation Generation': 'Creates markdown documentation from the analyzed code',
+        'Utility': 'Helper functions and utilities',
+        'Dependency Management': 'Installs and manages dependencies'
+      };
+      
+      Object.entries(logicalModules).forEach(([moduleName, module]) => {
+        markdown += `#### ${moduleName}\n\n`;
+        
+        // Add description
+        const description = moduleDescriptions[moduleName] || 'Module functions';
+        markdown += `${description}.\n\n`;
+        
+        // List key functions in this module
+        if (module.functions.length > 0) {
+          markdown += '**Functions:**\n\n';
+          
+          module.functions.slice(0, 5).forEach(func => {
+            markdown += `- \`${func.name}()\`: ${func.description || 'No description available'}\n`;
+          });
+          
+          if (module.functions.length > 5) {
+            markdown += `- ...and ${module.functions.length - 5} more functions\n`;
+          }
+          
+          markdown += '\n';
+        }
+      });
+    }
+    
+    // Key Repository Elements
+    const keyElementsDoc = generateKeyElementsDocumentation(filesInfo, features, moduleInterfaces);
+    if (keyElementsDoc) {
+      markdown += keyElementsDoc;
+    }
+    
+    // Entry Points Documentation
+    const entryPointsDoc = generateEntryPointDocumentation(filesInfo, moduleInterfaces);
+    if (entryPointsDoc) {
+      markdown += '## Entry Points\n\n';
+      markdown += entryPointsDoc;
+    }
+    
+    // Call Hierarchy
+    const callHierarchyDiagrams = generateCallHierarchyDiagrams(moduleInterfaces, filesInfo);
+    if (callHierarchyDiagrams) {
+      markdown += '## Call Hierarchy\n\n';
+      markdown += 'The following diagrams show the key function call flows in the codebase, dynamically analyzed based on function declarations, parameters, and relationships.\n\n';
+      markdown += callHierarchyDiagrams;
+    }
+    
+    // Module Interface Documentation
+    const moduleInterfaceDoc = generateModuleInterfaceDocumentation(moduleInterfaces);
+    if (moduleInterfaceDoc) {
+      markdown += '## Module Interfaces\n\n';
+      markdown += 'This section documents the public interfaces of key modules, including exported classes, functions, and types.\n\n';
+      markdown += moduleInterfaceDoc;
+    }
+    
+    // Function Index
+    if (filesInfo.some(f => f.functions && f.functions.length > 0)) {
+      markdown += '## Function Index\n\n';
+      
+      markdown += '| Function | Module | Description | Signature |\n';
+      markdown += '|----------|--------|-------------|----------|\n';
+      
+      // Collect all functions from logical modules
+      const allFunctions = [];
+      if (moduleInterfaces._logicalModules) {
+        Object.entries(moduleInterfaces._logicalModules).forEach(([moduleName, module]) => {
+          module.functions.forEach(func => {
+            allFunctions.push({
+              name: func.name,
+              module: moduleName,
+              description: func.description || '',
+              signature: func.signature || `function ${func.name}()`
+            });
+          });
+        });
+      }
+      
+      // Sort functions by name
+      allFunctions.sort((a, b) => a.name.localeCompare(b.name));
+      
+      // Add functions to table
+      allFunctions.forEach(func => {
+        const shortDesc = func.description.length > 30 
+          ? func.description.substring(0, 27) + '...' 
+          : func.description;
+        markdown += `| \`${func.name}\` | ${func.module} | ${shortDesc} | \`${func.signature}\` |\n`;
+      });
+      
+      markdown += '\n';
+    }
+    
+    // Component Tree (if components exist)
     const componentTreeDiagram = generateComponentTreeDiagram(filesInfo, detectedLanguage);
     if (componentTreeDiagram) {
       markdown += '## Component Tree\n\n';
@@ -1954,7 +4719,7 @@ async function main() {
       markdown += componentTreeDiagram;
     }
     
-    // Service Architecture
+    // Service Architecture (if services exist)
     const serviceDiagram = generateServiceDiagram(filesInfo, graph);
     if (serviceDiagram) {
       markdown += '## Service Architecture\n\n';
@@ -1962,106 +4727,162 @@ async function main() {
       markdown += serviceDiagram;
     }
     
-    // Module Dependencies
-    markdown += '## Module Dependencies\n\n';
-    markdown += 'The application is organized into logical modules with the following dependency structure:\n\n';
-    markdown += generateModuleDiagram(features, detectedLanguage);
-    
-    // Routing Structure
+    // API/Routes Structure
     const routingDiagram = generateRoutingDiagram(filesInfo, detectedLanguage);
     if (routingDiagram) {
-      markdown += '## Routing Structure\n\n';
+      markdown += '## API & Route Structure\n\n';
+      markdown += 'The application exposes the following routes and API endpoints:\n\n';
       markdown += routingDiagram;
-    }
-    
-    // Public API & Interface Map
-    const serviceInterfaces = generateServiceInterfaceTables(features);
-    const componentInterfaces = generateComponentInterfaceTables(features);
-    
-    if (serviceInterfaces || componentInterfaces) {
-      markdown += '## Public API & Interface Map\n\n';
-      
-      if (serviceInterfaces) {
-        markdown += '### Core Services Public Interfaces\n\n';
-        markdown += serviceInterfaces;
-      }
-      
-      if (componentInterfaces) {
-        markdown += '### Component Public Methods\n\n';
-        markdown += componentInterfaces;
-      }
-    }
-    
-    // Main Model Interfaces
-    const modelInterfaces = generateModelInterfaces(features);
-    if (modelInterfaces) {
-      markdown += '## Main Model Interfaces\n\n';
-      markdown += modelInterfaces;
-    }
-    
-    // Import Analysis
-    const importAnalysis = analyzeImports(filesInfo);
-    if (importAnalysis) {
-      markdown += '## Import Analysis\n\n';
-      markdown += 'The most commonly imported modules in the application:\n\n';
-      markdown += importAnalysis;
     }
     
     // Code Organization by Feature
     markdown += '## Code Organization by Feature\n\n';
     
-    // List all features and their components
-    Object.entries(features).forEach(([featureName, feature]) => {
-      markdown += `### ${featureName.charAt(0).toUpperCase() + featureName.slice(1)}\n\n`;
+    // Group by logical module first
+    if (moduleInterfaces._logicalModules) {
+      markdown += 'Below is the breakdown of code organization by feature and logical modules:\n\n';
       
-      // List components if any
-      if (feature.components.length > 0) {
-        markdown += '**Components**:\n';
-        feature.components.slice(0, 5).forEach(comp => {
-          markdown += `- \`${path.basename(comp.path)}\`\n`;
-        });
-        if (feature.components.length > 5) {
-          markdown += `- ...and ${feature.components.length - 5} more\n`;
+      // List all features and their components
+      Object.entries(features).forEach(([featureName, feature]) => {
+        markdown += `### ${featureName.charAt(0).toUpperCase() + featureName.slice(1)}\n\n`;
+        
+        // List components if any
+        if (feature.components.length > 0) {
+          markdown += '**Components**:\n';
+          feature.components.slice(0, 5).forEach(comp => {
+            const moduleName = determineComponentLogicalModule(comp, moduleInterfaces);
+            markdown += `- \`${path.basename(comp.path)}\` (${moduleName})\n`;
+          });
+          if (feature.components.length > 5) {
+            markdown += `- ...and ${feature.components.length - 5} more\n`;
+          }
+          markdown += '\n';
         }
-        markdown += '\n';
-      }
-      
-      // List services if any
-      if (feature.services.length > 0) {
-        markdown += '**Services**:\n';
-        feature.services.slice(0, 5).forEach(service => {
-          markdown += `- \`${path.basename(service.path)}\`\n`;
-        });
-        if (feature.services.length > 5) {
-          markdown += `- ...and ${feature.services.length - 5} more\n`;
+        
+        // List services if any
+        if (feature.services.length > 0) {
+          markdown += '**Services**:\n';
+          feature.services.slice(0, 5).forEach(service => {
+            const moduleName = determineServiceLogicalModule(service, moduleInterfaces);
+            markdown += `- \`${path.basename(service.path)}\` (${moduleName})\n`;
+          });
+          if (feature.services.length > 5) {
+            markdown += `- ...and ${feature.services.length - 5} more\n`;
+          }
+          markdown += '\n';
         }
-        markdown += '\n';
-      }
-      
-      // List controllers if any
-      if (feature.controllers.length > 0) {
-        markdown += '**Controllers/Handlers**:\n';
-        feature.controllers.slice(0, 5).forEach(controller => {
-          markdown += `- \`${path.basename(controller.path)}\`\n`;
-        });
-        if (feature.controllers.length > 5) {
-          markdown += `- ...and ${feature.controllers.length - 5} more\n`;
+        
+        // List controllers if any
+        if (feature.controllers.length > 0) {
+          markdown += '**Controllers/Handlers**:\n';
+          feature.controllers.slice(0, 5).forEach(controller => {
+            markdown += `- \`${path.basename(controller.path)}\`\n`;
+          });
+          if (feature.controllers.length > 5) {
+            markdown += `- ...and ${feature.controllers.length - 5} more\n`;
+          }
+          markdown += '\n';
         }
-        markdown += '\n';
-      }
-      
-      // List models if any
-      if (feature.models.length > 0) {
-        markdown += '**Models/Interfaces**:\n';
-        feature.models.slice(0, 5).forEach(model => {
-          markdown += `- \`${path.basename(model.path)}\`\n`;
-        });
-        if (feature.models.length > 5) {
-          markdown += `- ...and ${feature.models.length - 5} more\n`;
+        
+        // List models if any
+        if (feature.models.length > 0) {
+          markdown += '**Models/Interfaces**:\n';
+          feature.models.slice(0, 5).forEach(model => {
+            markdown += `- \`${path.basename(model.path)}\`\n`;
+          });
+          if (feature.models.length > 5) {
+            markdown += `- ...and ${feature.models.length - 5} more\n`;
+          }
+          markdown += '\n';
         }
-        markdown += '\n';
-      }
-    });
+        
+        // List utility functions if any
+        const moduleFunctions = filesInfo
+          .filter(f => path.dirname(f.path).includes(featureName) && f.functions && f.functions.length > 0)
+          .flatMap(f => f.functions.filter(fn => fn.isExported));
+        
+        if (moduleFunctions.length > 0) {
+          markdown += '**Utility Functions**:\n';
+          moduleFunctions.slice(0, 5).forEach(func => {
+            const moduleName = determineFunctionLogicalModule(func, moduleInterfaces);
+            markdown += `- \`${func.name}(${func.parameters.map(p => p.name).join(', ')})\` (${moduleName})\n`;
+          });
+          if (moduleFunctions.length > 5) {
+            markdown += `- ...and ${moduleFunctions.length - 5} more\n`;
+          }
+          markdown += '\n';
+        }
+      });
+    } else {
+      // Fall back to the original implementation if logical modules aren't available
+      Object.entries(features).forEach(([featureName, feature]) => {
+        markdown += `### ${featureName.charAt(0).toUpperCase() + featureName.slice(1)}\n\n`;
+        
+        // List components if any
+        if (feature.components.length > 0) {
+          markdown += '**Components**:\n';
+          feature.components.slice(0, 5).forEach(comp => {
+            markdown += `- \`${path.basename(comp.path)}\`\n`;
+          });
+          if (feature.components.length > 5) {
+            markdown += `- ...and ${feature.components.length - 5} more\n`;
+          }
+          markdown += '\n';
+        }
+        
+        // List services if any
+        if (feature.services.length > 0) {
+          markdown += '**Services**:\n';
+          feature.services.slice(0, 5).forEach(service => {
+            markdown += `- \`${path.basename(service.path)}\`\n`;
+          });
+          if (feature.services.length > 5) {
+            markdown += `- ...and ${feature.services.length - 5} more\n`;
+          }
+          markdown += '\n';
+        }
+        
+        // List controllers if any
+        if (feature.controllers.length > 0) {
+          markdown += '**Controllers/Handlers**:\n';
+          feature.controllers.slice(0, 5).forEach(controller => {
+            markdown += `- \`${path.basename(controller.path)}\`\n`;
+          });
+          if (feature.controllers.length > 5) {
+            markdown += `- ...and ${feature.controllers.length - 5} more\n`;
+          }
+          markdown += '\n';
+        }
+        
+        // List models if any
+        if (feature.models.length > 0) {
+          markdown += '**Models/Interfaces**:\n';
+          feature.models.slice(0, 5).forEach(model => {
+            markdown += `- \`${path.basename(model.path)}\`\n`;
+          });
+          if (feature.models.length > 5) {
+            markdown += `- ...and ${feature.models.length - 5} more\n`;
+          }
+          markdown += '\n';
+        }
+        
+        // List utility functions if any
+        const moduleFunctions = filesInfo
+          .filter(f => path.dirname(f.path).includes(featureName) && f.functions && f.functions.length > 0)
+          .flatMap(f => f.functions.filter(fn => fn.isExported));
+        
+        if (moduleFunctions.length > 0) {
+          markdown += '**Utility Functions**:\n';
+          moduleFunctions.slice(0, 5).forEach(func => {
+            markdown += `- \`${func.name}(${func.parameters.map(p => p.name).join(', ')})\`\n`;
+          });
+          if (moduleFunctions.length > 5) {
+            markdown += `- ...and ${moduleFunctions.length - 5} more\n`;
+          }
+          markdown += '\n';
+        }
+      });
+    }
     
     markdown += '---\n\n';
     markdown += '*This repository map was automatically generated using tree-sitter code analysis.*';
@@ -2074,6 +4895,59 @@ async function main() {
     console.error('Error:', error);
     process.exit(1);
   }
+}
+
+// Helper functions to determine logical module for components, services, and functions
+function determineComponentLogicalModule(component, moduleInterfaces) {
+  // Try to find the component in module interfaces
+  const moduleName = Object.keys(moduleInterfaces || {}).find(name => 
+    moduleInterfaces[name] && moduleInterfaces[name].exportedClasses && 
+    moduleInterfaces[name].exportedClasses.some(cls => cls.name === component.name)
+  );
+  
+  if (moduleName && moduleInterfaces[moduleName] && moduleInterfaces[moduleName].logicalModule) {
+    return moduleInterfaces[moduleName].logicalModule;
+  }
+  
+  return 'UI Component';
+}
+
+function determineServiceLogicalModule(service, moduleInterfaces) {
+  // Try to find the service in module interfaces
+  const moduleName = Object.keys(moduleInterfaces || {}).find(name => 
+    moduleInterfaces[name] && moduleInterfaces[name].exportedClasses && 
+    moduleInterfaces[name].exportedClasses.some(cls => cls.name === service.name)
+  );
+  
+  if (moduleName && moduleInterfaces[moduleName] && moduleInterfaces[moduleName].logicalModule) {
+    return moduleInterfaces[moduleName].logicalModule;
+  }
+  
+  return 'Service';
+}
+
+function determineFunctionLogicalModule(func, moduleInterfaces) {
+  if (!moduleInterfaces || !moduleInterfaces._logicalModules) {
+    return 'Utility';
+  }
+  
+  // Check each logical module for this function
+  for (const [moduleName, module] of Object.entries(moduleInterfaces._logicalModules)) {
+    if (module.functions.some(f => f.name === func.name)) {
+      return moduleName;
+    }
+  }
+  
+  // Determine based on function name
+  if (func.name.includes('extract') || func.name.includes('parse')) {
+    return 'Code Analysis';
+  } else if (func.name.includes('generate') || func.name.includes('create')) {
+    return 'Documentation Generation';
+  } else if (func.name.includes('find') || func.name.includes('read')) {
+    return 'File Processing';
+  }
+  
+  return 'Utility';
 }
 
 // Run the main function
